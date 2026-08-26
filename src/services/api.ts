@@ -70,6 +70,13 @@ export const MeshApi = {
     return data.pathways || [];
   },
 
+  async getPathway(id: string): Promise<PathwayDefinition> {
+    const res = await fetch(`/api/pathways/${id}`);
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Pathway not found');
+    return data.pathway;
+  },
+
   async savePathway(pathway: PathwayDefinition): Promise<PathwayDefinition> {
     const res = await fetch('/api/pathways', {
       method: 'POST',

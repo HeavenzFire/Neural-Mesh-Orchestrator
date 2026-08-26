@@ -6,6 +6,13 @@ import {
   NeuronNode 
 } from '../types/neuron.ts';
 import { MeshApi } from '../services/api.ts';
+import SharePathwayModal from './SharePathwayModal.tsx';
+import ImportPathwayModal from './ImportPathwayModal.tsx';
+import {
+  downloadPathwayAsJsonFile,
+  generatePathwayShareableUrl,
+  decodePathwayFromBase64
+} from '../utils/pathwaySerialization.ts';
 import { 
   Play, 
   Sparkles, 
@@ -20,7 +27,17 @@ import {
   FileCode2, 
   Cpu,
   CornerDownRight,
-  Hash
+  Hash,
+  Download,
+  Share2,
+  Upload,
+  Link as LinkIcon,
+  Check,
+  FileJson,
+  Layers,
+  Copy,
+  Sliders,
+  CheckCheck
 } from 'lucide-react';
 
 interface PathwayStudioProps {
@@ -36,6 +53,14 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
   const [executionResult, setExecutionResult] = useState<PathwayExecutionResult | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
+  const [simulateFailover, setSimulateFailover] = useState(false);
+
+  // Modals and feedback state
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [copiedLinkForId, setCopiedLinkForId] = useState<string | null>(null);
+  const [copiedQuickLink, setCopiedQuickLink] = useState(false);
 
   // Custom payload input
   const [inputPayloadStr, setInputPayloadStr] = useState<string>(
@@ -58,11 +83,48 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
     created_at: ''
   });
 
+  const notify = (msg: string) => {
+    setActionNotice(msg);
+    setTimeout(() => setActionNotice(null), 3500);
+  };
+
   const loadPathways = async () => {
     try {
       const list = await MeshApi.getPathways();
+      
+      // Check for shareable link or pathway_data in query params
+      const urlParams = new URLSearchParams(window.location.search);
+      const sharedDataParam = urlParams.get('pathway_data');
+      const sharedIdParam = urlParams.get('pathway_id');
+
+      let initialSelected: PathwayDefinition | null = null;
+
+      if (sharedDataParam) {
+        try {
+          const parsed = decodePathwayFromBase64(sharedDataParam);
+          if (parsed && parsed.id && parsed.steps) {
+            initialSelected = parsed;
+            const exists = list.some(p => p.id === parsed.id);
+            if (!exists) {
+              list.unshift(parsed);
+            }
+            notify(`Loaded shared reproducible pathway: "${parsed.name}"`);
+          }
+        } catch (e) {
+          console.warn('Failed to parse pathway_data param:', e);
+        }
+      } else if (sharedIdParam) {
+        const found = list.find(p => p.id === sharedIdParam);
+        if (found) {
+          initialSelected = found;
+          notify(`Selected pathway from link: "${found.name}"`);
+        }
+      }
+
       setPathways(list);
-      if (list.length > 0 && !selectedPathway) {
+      if (initialSelected) {
+        setSelectedPathway(initialSelected);
+      } else if (list.length > 0 && !selectedPathway) {
         setSelectedPathway(list[0]);
       }
     } catch (err) {
@@ -107,7 +169,7 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
       // Step through visually
       for (let i = 0; i < selectedPathway.steps.length; i++) {
         setActiveStepIndex(i);
-        await new Promise(r => setTimeout(r, 280));
+        await new Promise(r => setTimeout(r, 260));
       }
 
       const result = await MeshApi.executePathway(selectedPathway.id, parsedPayload);
@@ -150,9 +212,47 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
       await loadPathways();
       setSelectedPathway(saved);
       setIsEditing(false);
+      notify(`Pathway "${saved.name}" saved to cortex.`);
     } catch (err: any) {
       alert(err.message);
     }
+  };
+
+  // Export current active pathway configuration into a JSON file
+  const handleExportJson = (targetPathway?: PathwayDefinition) => {
+    const pathwayToExport = targetPathway || (isEditing ? editForm : selectedPathway);
+    if (!pathwayToExport) return;
+
+    const filename = downloadPathwayAsJsonFile(pathwayToExport);
+    notify(`Serialized and downloaded "${filename}" JSON file.`);
+  };
+
+  // Generate base64-encoded URL link for quick sharing and reproduction
+  const handleCopyBase64UrlLink = (targetPathway?: PathwayDefinition) => {
+    const target = targetPathway || (isEditing ? editForm : selectedPathway);
+    if (!target) return;
+
+    const shareableUrl = generatePathwayShareableUrl(target);
+    navigator.clipboard.writeText(shareableUrl);
+
+    if (targetPathway) {
+      setCopiedLinkForId(targetPathway.id);
+      setTimeout(() => setCopiedLinkForId(null), 2000);
+    } else {
+      setCopiedQuickLink(true);
+      setTimeout(() => setCopiedQuickLink(false), 2000);
+    }
+    notify(`Base64 reproducible link for "${target.name}" copied to clipboard!`);
+  };
+
+  const handleImportPathway = (imported: PathwayDefinition) => {
+    setPathways(prev => {
+      const filtered = prev.filter(p => p.id !== imported.id);
+      return [imported, ...filtered];
+    });
+    setSelectedPathway(imported);
+    setIsEditing(false);
+    notify(`Successfully imported pathway "${imported.name}" with ${imported.steps.length} hops.`);
   };
 
   const handleAddStep = () => {
@@ -188,8 +288,26 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
     setEditForm({ ...editForm, steps: nextSteps });
   };
 
+  const currentPathway = isEditing ? editForm : selectedPathway;
+
   return (
     <div className="space-y-6">
+      {/* Toast Notification Notice */}
+      {actionNotice && (
+        <div className="p-3 bg-indigo-950/90 border border-indigo-500/50 rounded-xl text-xs text-indigo-200 flex items-center justify-between shadow-xl animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{actionNotice}</span>
+          </div>
+          <button 
+            onClick={() => setActionNotice(null)}
+            className="text-indigo-400 hover:text-indigo-200 text-xs ml-4"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Top Header Card with AI Thread Optimizer */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -201,7 +319,7 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
               <h2 className="text-lg font-bold text-slate-100">Neural Pathway Threading Engine</h2>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Thread multi-hop execution pipelines across 256 repository nodes with dynamic capability discovery and load-balanced failovers.
+              Thread multi-hop execution pipelines across 256 repository nodes with dynamic capability discovery, Base64 & JSON reproducibility, and load-balanced failovers.
             </p>
           </div>
 
@@ -254,57 +372,102 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-xl">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Configured Pathways</h3>
-              <button
-                id="create-new-pathway-btn"
-                onClick={() => {
-                  const newDef: PathwayDefinition = {
-                    id: 'custom-path-' + Math.random().toString(36).substring(2, 7),
-                    name: 'New Custom Neural Pipeline',
-                    description: 'Custom chain threading across repository nodes.',
-                    routing_policy: 'least_latency',
-                    steps: [
-                      { neuronId: 'entangled-multimodal-system-3', capability: 'route', timeout_ms: 100 },
-                      { neuronId: 'iben-genesis', capability: 'generate', timeout_ms: 300 }
-                    ],
-                    created_at: new Date().toISOString()
-                  };
-                  setEditForm(newDef);
-                  setSelectedPathway(newDef);
-                  setIsEditing(true);
-                }}
-                className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium"
-              >
-                <Plus className="w-3.5 h-3.5" /> New Pipeline
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  id="import-pathway-btn"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="text-xs text-slate-300 hover:text-white flex items-center gap-1 font-medium bg-slate-800 hover:bg-slate-700 px-2.5 py-1 rounded-lg border border-slate-700 transition-colors"
+                  title="Import from JSON or Share Link"
+                >
+                  <Upload className="w-3 h-3 text-indigo-400" />
+                  <span>Import</span>
+                </button>
+                <button
+                  id="create-new-pathway-btn"
+                  onClick={() => {
+                    const newDef: PathwayDefinition = {
+                      id: 'custom-path-' + Math.random().toString(36).substring(2, 7),
+                      name: 'New Custom Neural Pipeline',
+                      description: 'Custom chain threading across repository nodes.',
+                      routing_policy: 'least_latency',
+                      steps: [
+                        { neuronId: 'entangled-multimodal-system-3', capability: 'route', timeout_ms: 100 },
+                        { neuronId: 'iben-genesis', capability: 'generate', timeout_ms: 300 }
+                      ],
+                      created_at: new Date().toISOString()
+                    };
+                    setEditForm(newDef);
+                    setSelectedPathway(newDef);
+                    setIsEditing(true);
+                  }}
+                  className="text-xs text-indigo-300 hover:text-white flex items-center gap-1 font-medium bg-indigo-950/60 hover:bg-indigo-900/80 px-2.5 py-1 rounded-lg border border-indigo-500/30 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" /> New
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
               {pathways.map(p => {
                 const isSelected = selectedPathway?.id === p.id;
+                const isCopied = copiedLinkForId === p.id;
+
                 return (
-                  <button
+                  <div
                     key={p.id}
-                    id={`pathway-item-${p.id}`}
-                    onClick={() => handleSelectPathway(p)}
-                    className={`w-full text-left p-3 rounded-lg border transition-all ${
+                    className={`p-3 rounded-lg border transition-all ${
                       isSelected
-                        ? 'bg-indigo-950/40 border-indigo-500/50 shadow-md'
+                        ? 'bg-indigo-950/40 border-indigo-500/50 shadow-md ring-1 ring-indigo-500/20'
                         : 'bg-slate-950/50 border-slate-800/80 hover:bg-slate-800/60'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-slate-200 text-xs">{p.name}</span>
-                      <span className="text-[10px] font-mono text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">
-                        {p.steps.length} hops
-                      </span>
+                    <div 
+                      id={`pathway-item-${p.id}`}
+                      onClick={() => handleSelectPathway(p)}
+                      className="cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-slate-200 text-xs truncate max-w-[160px]">{p.name}</span>
+                        <span className="text-[10px] font-mono text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20 shrink-0">
+                          {p.steps.length} hops
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 line-clamp-2">{p.description}</p>
                     </div>
-                    <p className="text-[11px] text-slate-400 line-clamp-2">{p.description}</p>
-                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-slate-500">
-                      <span className="capitalize">{p.routing_policy.replace('_', ' ')}</span>
-                      <span>•</span>
-                      <span className="font-mono">{p.id}</span>
+
+                    <div className="mt-2.5 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[10px]">
+                      <span className="font-mono text-slate-500 truncate max-w-[110px]">{p.id}</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          id={`quick-copy-link-${p.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopyBase64UrlLink(p);
+                          }}
+                          className={`p-1 rounded transition-colors ${
+                            isCopied
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : 'text-slate-400 hover:text-indigo-300 hover:bg-slate-800'
+                          }`}
+                          title="Copy Base64 Share Link"
+                        >
+                          {isCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <LinkIcon className="w-3 h-3" />}
+                        </button>
+
+                        <button
+                          id={`quick-export-json-${p.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExportJson(p);
+                          }}
+                          className="p-1 text-slate-400 hover:text-indigo-300 hover:bg-slate-800 rounded transition-colors"
+                          title="Download JSON file"
+                        >
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -320,12 +483,12 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
             </div>
             <textarea
               id="payload-input-textarea"
-              rows={6}
+              rows={4}
               value={inputPayloadStr}
               onChange={e => setInputPayloadStr(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
             />
-            <div className="mt-3 flex items-center justify-between">
+            <div className="mt-3">
               <button
                 id="execute-pathway-btn"
                 onClick={handleExecute}
@@ -348,26 +511,68 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
         <div className="lg:col-span-8 space-y-4">
           {/* Active Pathway Details Card */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-800">
-              <div>
-                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                  {selectedPathway?.name || 'No Pathway Selected'}
-                  {selectedPathway?.routing_policy && (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2 flex-wrap">
+                  <span>{currentPathway?.name || 'No Pathway Selected'}</span>
+                  {currentPathway?.routing_policy && (
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                      Policy: {selectedPathway.routing_policy}
+                      Policy: {currentPathway.routing_policy}
                     </span>
                   )}
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">{selectedPathway?.description}</p>
+                <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{currentPathway?.description}</p>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Action Toolbar: 1-Click Export JSON, 1-Click Base64 Link, Share Dialog */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {currentPathway && (
+                  <>
+                    {/* 1. Button to serialize current active pathway configuration into a JSON file */}
+                    <button
+                      id="export-json-file-btn"
+                      onClick={() => handleExportJson()}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                      title="Serialize active configuration into a downloadable .json file"
+                    >
+                      <Download className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Export JSON</span>
+                    </button>
+
+                    {/* 2. Button to generate base64-encoded URL link for quick sharing and reproduction */}
+                    <button
+                      id="copy-base64-link-btn"
+                      onClick={() => handleCopyBase64UrlLink()}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 border ${
+                        copiedQuickLink
+                          ? 'bg-emerald-600 text-white border-emerald-500'
+                          : 'bg-indigo-950/70 hover:bg-indigo-900/90 text-indigo-300 border-indigo-500/40 hover:border-indigo-400'
+                      }`}
+                      title="Generate and copy Base64-encoded reproducible web link"
+                    >
+                      {copiedQuickLink ? <Check className="w-3.5 h-3.5" /> : <LinkIcon className="w-3.5 h-3.5 text-indigo-400" />}
+                      <span>{copiedQuickLink ? 'Link Copied!' : 'Copy Base64 Link'}</span>
+                    </button>
+
+                    {/* 3. Comprehensive Share Dialog */}
+                    <button
+                      id="open-share-modal-btn"
+                      onClick={() => setIsShareModalOpen(true)}
+                      className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition-colors"
+                      title="Open full reproducibility and sharing modal"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Share</span>
+                    </button>
+                  </>
+                )}
+
                 {isEditing ? (
                   <>
                     <button
                       id="save-pathway-btn"
                       onClick={handleSavePathway}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold"
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-all shadow"
                     >
                       Save Pathway
                     </button>
@@ -390,7 +595,7 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
                     }}
                     className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium border border-slate-700"
                   >
-                    Edit Threading Steps
+                    Edit Threading
                   </button>
                 )}
               </div>
@@ -577,6 +782,22 @@ export default function PathwayStudio({ neurons, onPathwayExecuted, onHighlightS
           )}
         </div>
       </div>
+
+      {/* Share & Export Modal */}
+      <SharePathwayModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        pathway={currentPathway}
+        onExportJson={() => handleExportJson(currentPathway || undefined)}
+      />
+
+      {/* Import Pathway Modal */}
+      <ImportPathwayModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportPathway={handleImportPathway}
+      />
     </div>
   );
 }
+

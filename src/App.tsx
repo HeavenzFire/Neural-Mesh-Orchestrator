@@ -44,6 +44,16 @@ export default function App() {
   useEffect(() => {
     fetchMeshState();
     const interval = setInterval(fetchMeshState, 8000);
+
+    // If query string has pathway link or specific tab
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab') as NavTab;
+    if (tabParam && ['topology', 'pathways', 'directory', 'bus', 'observability', 'security', 'api'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    } else if (urlParams.get('pathway_data') || urlParams.get('pathway_id')) {
+      setActiveTab('pathways');
+    }
+
     return () => clearInterval(interval);
   }, []);
 

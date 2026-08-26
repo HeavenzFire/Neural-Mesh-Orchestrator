@@ -130,6 +130,15 @@ async function startServer() {
   app.get('/api/pathways', handleGetPathways);
   app.get('/pathways', handleGetPathways);
 
+  // GET /api/pathways/:id (supports /pathways/:id)
+  const handleGetPathwayById = (req: express.Request, res: express.Response) => {
+    const pathway = registry.getPathwayById(req.params.id);
+    if (!pathway) return res.status(404).json({ success: false, error: 'Pathway not found' });
+    res.json({ success: true, pathway });
+  };
+  app.get('/api/pathways/:id', handleGetPathwayById);
+  app.get('/pathways/:id', handleGetPathwayById);
+
   // POST /api/pathways
   app.post('/api/pathways', (req, res) => {
     try {

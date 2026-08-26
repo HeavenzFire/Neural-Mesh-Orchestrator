@@ -388,6 +388,10 @@ export class NeuralMeshRegistry {
     return Array.from(this.pathways.values());
   }
 
+  public getPathwayById(id: string): PathwayDefinition | undefined {
+    return this.pathways.get(id);
+  }
+
   public savePathway(pathway: PathwayDefinition): PathwayDefinition {
     if (!pathway.id || !pathway.name || !pathway.steps || pathway.steps.length === 0) {
       throw new Error('Pathway must have id, name, and at least one step.');
