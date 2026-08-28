@@ -1,30 +1,26 @@
 ```
-# Build artifacts
-dist/
-build/
+# Rust build artifacts
+target/
+**/target/
 
-# Dependencies
-node_modules/
+# Cargo lock file (optional, but commonly ignored in libraries)
+Cargo.lock
 
-# Environment
-.env
-.env.local
-.env.*
+# Common Rust build artifacts
+**/*.rlib
+**/*.rmeta
+**/*.so
+**/*.dylib
+**/*.dll
+**/*.exe
 
-# Logs
-*.log
+# Temporary build files
+**/.rustc_info.json
+**/CACHEDIR.TAG
+**/.cargo-artifact-lock
+**/.cargo-build-lock
+**/.cargo-lock
+**/.fingerprint/
+**/deps/
 
-# Editors
-.vscode/
-.idea/
-
-# Temp files
-*.tmp
-*.swp
-
-# Compiled files
-*.o
-*.obj
-*.cjs
-*.cjs.map
 ```
