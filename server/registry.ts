@@ -13,6 +13,17 @@ import {
 } from '../src/types/neuron.ts';
 import { generate256Neurons } from './mockMesh.ts';
 
+// Performance optimization: Cache for expensive operations
+interface RegistryCache {
+  neuronsByDomain: Map<string, NeuronNode[]>;
+  neuronsByCapability: Map<string, NeuronNode[]>;
+  neuronsByStatus: Map<string, NeuronNode[]>;
+  pathwayCache: Map<string, { result: any; timestamp: number }>;
+  metricsCache: { data: any; timestamp: number } | null;
+}
+
+const CACHE_TTL_MS = 1000; // 1 second cache TTL for real-time data
+
 export class NeuralMeshRegistry {
   private nodes: Map<string, NeuronNode> = new Map();
   private pathways: Map<string, PathwayDefinition> = new Map();
@@ -22,12 +33,30 @@ export class NeuralMeshRegistry {
   private auditLogs: AuditLog[] = [];
   private metricHistory: MetricSnapshot[] = [];
   private roundRobinCounters: Map<string, number> = new Map();
+  private cache: RegistryCache;
+  private cacheValidUntil: number = 0;
 
   constructor() {
+    this.cache = {
+      neuronsByDomain: new Map(),
+      neuronsByCapability: new Map(),
+      neuronsByStatus: new Map(),
+      pathwayCache: new Map(),
+      metricsCache: null
+    };
     this.initializeMesh();
     this.seedDefaultPathways();
     this.seedInitialMetrics();
     this.startBackgroundHeartbeatSimulator();
+  }
+
+  private invalidateCache() {
+    this.cacheValidUntil = 0;
+    this.cache.metricsCache = null;
+  }
+
+  private isCacheValid(): boolean {
+    return Date.now() < this.cacheValidUntil;
   }
 
   private initializeMesh() {
@@ -257,27 +286,66 @@ export class NeuralMeshRegistry {
   }
 
   public getNeurons(filters?: { domain?: string; capability?: string; status?: string; search?: string }): NeuronNode[] {
-    let result = Array.from(this.nodes.values());
+    // For filtered queries, use optimized lookups
+    if (!filters || Object.keys(filters).length === 0) {
+      return Array.from(this.nodes.values());
+    }
 
-    if (filters) {
-      if (filters.domain) {
-        result = result.filter(n => n.manifest.domain.toLowerCase() === filters.domain!.toLowerCase());
+    let result: NeuronNode[] = [];
+    const hasDomain = !!filters.domain;
+    const hasStatus = !!filters.status;
+    const hasCapability = !!filters.capability;
+    const hasSearch = !!filters.search;
+
+    // Single filter optimizations
+    if (hasDomain && !hasCapability && !hasStatus && !hasSearch) {
+      const cached = this.cache.neuronsByDomain.get(filters.domain!.toLowerCase());
+      if (cached && this.isCacheValid()) {
+        return cached;
       }
-      if (filters.capability) {
-        result = result.filter(n => n.manifest.capabilities.some(c => c.toLowerCase().includes(filters.capability!.toLowerCase())));
+      result = Array.from(this.nodes.values()).filter(n => 
+        n.manifest.domain.toLowerCase() === filters.domain!.toLowerCase()
+      );
+      if (this.isCacheValid()) {
+        this.cache.neuronsByDomain.set(filters.domain!.toLowerCase(), result);
       }
-      if (filters.status) {
-        result = result.filter(n => n.status.toLowerCase() === filters.status!.toLowerCase());
+      return result;
+    }
+
+    if (hasStatus && !hasDomain && !hasCapability && !hasSearch) {
+      const cached = this.cache.neuronsByStatus.get(filters.status!.toLowerCase());
+      if (cached && this.isCacheValid()) {
+        return cached;
       }
-      if (filters.search) {
-        const q = filters.search.toLowerCase();
-        result = result.filter(n =>
-          n.manifest.id.toLowerCase().includes(q) ||
-          n.manifest.domain.toLowerCase().includes(q) ||
-          n.manifest.capabilities.some(c => c.toLowerCase().includes(q)) ||
-          (n.manifest.metadata?.description || '').toLowerCase().includes(q)
-        );
+      result = Array.from(this.nodes.values()).filter(n => 
+        n.status.toLowerCase() === filters.status!.toLowerCase()
+      );
+      if (this.isCacheValid()) {
+        this.cache.neuronsByStatus.set(filters.status!.toLowerCase(), result);
       }
+      return result;
+    }
+
+    // Multi-filter or search queries - direct filtering
+    result = Array.from(this.nodes.values());
+
+    if (hasDomain) {
+      result = result.filter(n => n.manifest.domain.toLowerCase() === filters.domain!.toLowerCase());
+    }
+    if (hasCapability) {
+      result = result.filter(n => n.manifest.capabilities.some(c => c.toLowerCase().includes(filters.capability!.toLowerCase())));
+    }
+    if (hasStatus) {
+      result = result.filter(n => n.status.toLowerCase() === filters.status!.toLowerCase());
+    }
+    if (hasSearch) {
+      const q = filters.search.toLowerCase();
+      result = result.filter(n =>
+        n.manifest.id.toLowerCase().includes(q) ||
+        n.manifest.domain.toLowerCase().includes(q) ||
+        n.manifest.capabilities.some(c => c.toLowerCase().includes(q)) ||
+        (n.manifest.metadata?.description || '').toLowerCase().includes(q)
+      );
     }
 
     return result;
@@ -303,17 +371,30 @@ export class NeuralMeshRegistry {
     alternative_paths: string[][];
     estimated_latency_ms: number;
   } {
+    // Check cache for pathway results
+    const cacheKey = `${fromNeuronId}->${toNeuronId}`;
+    const cached = this.cache.pathwayCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS * 2) {
+      return cached.result;
+    }
+
     const startNode = this.nodes.get(fromNeuronId);
     const endNode = this.nodes.get(toNeuronId);
 
     if (!startNode || !endNode) {
-      return {
+      const emptyResult = {
         direct_available: false,
         recommended_path: [],
         alternative_paths: [],
         estimated_latency_ms: 0
       };
+      this.cache.pathwayCache.set(cacheKey, { result: emptyResult, timestamp: Date.now() });
+      return emptyResult;
     }
+
+    // Pre-compute neighbor map for faster lookups (optimization)
+    const onlineNodes = Array.from(this.nodes.values()).filter(n => n.status !== 'offline');
+    const nodeMap = new Map(onlineNodes.map(n => [n.manifest.id, n]));
 
     // BFS / Dijkstra-style path exploration using dependency and capability bridges
     const paths: string[][] = [];
@@ -330,15 +411,14 @@ export class NeuralMeshRegistry {
       }
 
       visited.add(current);
-      const currNode = this.nodes.get(current);
+      const currNode = nodeMap.get(current);
       if (!currNode) continue;
 
       // Check direct dependencies
       const neighbors = new Set<string>(currNode.manifest.dependencies || []);
 
       // Also connect to nodes in compatible domains or shared capabilities
-      for (const node of this.nodes.values()) {
-        if (node.status === 'offline') continue;
+      for (const node of onlineNodes) {
         if (currNode.manifest.capabilities.some(c => node.manifest.capabilities.includes(c)) ||
             (currNode.manifest.domain === 'orchestration' && node.manifest.domain !== 'orchestration')) {
           if (neighbors.size < 8) {
@@ -349,7 +429,7 @@ export class NeuralMeshRegistry {
 
       for (const next of neighbors) {
         if (!path.includes(next) && path.length < 6) {
-          const nextNode = this.nodes.get(next);
+          const nextNode = nodeMap.get(next);
           if (nextNode && nextNode.status !== 'offline') {
             queue.push({
               current: next,
@@ -368,20 +448,25 @@ export class NeuralMeshRegistry {
 
     // Sort by path length and total latency
     paths.sort((a, b) => {
-      const latA = a.reduce((sum, id) => sum + (this.nodes.get(id)?.health.latency_ms || 20), 0);
-      const latB = b.reduce((sum, id) => sum + (this.nodes.get(id)?.health.latency_ms || 20), 0);
+      const latA = a.reduce((sum, id) => sum + (nodeMap.get(id)?.health.latency_ms || 20), 0);
+      const latB = b.reduce((sum, id) => sum + (nodeMap.get(id)?.health.latency_ms || 20), 0);
       return latA - latB;
     });
 
     const recommended = paths[0] || [fromNeuronId, toNeuronId];
-    const estLatency = recommended.reduce((sum, id) => sum + (this.nodes.get(id)?.health.latency_ms || 20), 0);
+    const estLatency = recommended.reduce((sum, id) => sum + (nodeMap.get(id)?.health.latency_ms || 20), 0);
 
-    return {
+    const result = {
       direct_available: recommended.length === 2,
       recommended_path: recommended,
       alternative_paths: paths.slice(1),
       estimated_latency_ms: estLatency
     };
+
+    // Cache the result
+    this.cache.pathwayCache.set(cacheKey, { result, timestamp: Date.now() });
+
+    return result;
   }
 
   public getPathways(): PathwayDefinition[] {
@@ -572,6 +657,11 @@ export class NeuralMeshRegistry {
   // --- OBSERVABILITY, METRICS & ALERTS ---
 
   public getMetricsOverview() {
+    // Return cached metrics if still valid (avoid recalculating on every request)
+    if (this.cache.metricsCache && this.isCacheValid()) {
+      return this.cache.metricsCache.data;
+    }
+
     const nodesList = Array.from(this.nodes.values());
     const online = nodesList.filter(n => n.status === 'online').length;
     const degraded = nodesList.filter(n => n.status === 'degraded').length;
@@ -585,7 +675,7 @@ export class NeuralMeshRegistry {
 
     const totalRps = nodesList.reduce((sum, n) => sum + (n.health.requests_per_sec || 0), 0);
 
-    return {
+    const result = {
       total_nodes: nodesList.length,
       online_nodes: online,
       degraded_nodes: degraded,
@@ -600,6 +690,15 @@ export class NeuralMeshRegistry {
       total_pathways_configured: this.pathways.size,
       total_traces_recorded: this.executionHistory.length
     };
+
+    // Cache the result with TTL
+    this.cache.metricsCache = {
+      data: result,
+      timestamp: Date.now()
+    };
+    this.cacheValidUntil = Date.now() + CACHE_TTL_MS;
+
+    return result;
   }
 
   public getMetricTrends(): MetricSnapshot[] {
