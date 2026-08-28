@@ -300,6 +300,7 @@ function generate256Neurons() {
 }
 
 // server/registry.ts
+var CACHE_TTL_MS = 1e3;
 var NeuralMeshRegistry = class {
   constructor() {
     this.nodes = /* @__PURE__ */ new Map();
@@ -310,10 +311,25 @@ var NeuralMeshRegistry = class {
     this.auditLogs = [];
     this.metricHistory = [];
     this.roundRobinCounters = /* @__PURE__ */ new Map();
+    this.cacheValidUntil = 0;
+    this.cache = {
+      neuronsByDomain: /* @__PURE__ */ new Map(),
+      neuronsByCapability: /* @__PURE__ */ new Map(),
+      neuronsByStatus: /* @__PURE__ */ new Map(),
+      pathwayCache: /* @__PURE__ */ new Map(),
+      metricsCache: null
+    };
     this.initializeMesh();
     this.seedDefaultPathways();
     this.seedInitialMetrics();
     this.startBackgroundHeartbeatSimulator();
+  }
+  invalidateCache() {
+    this.cacheValidUntil = 0;
+    this.cache.metricsCache = null;
+  }
+  isCacheValid() {
+    return Date.now() < this.cacheValidUntil;
   }
   initializeMesh() {
     const initialNodes = generate256Neurons();
@@ -514,23 +530,55 @@ var NeuralMeshRegistry = class {
     return node;
   }
   getNeurons(filters) {
-    let result = Array.from(this.nodes.values());
-    if (filters) {
-      if (filters.domain) {
-        result = result.filter((n) => n.manifest.domain.toLowerCase() === filters.domain.toLowerCase());
+    if (!filters || Object.keys(filters).length === 0) {
+      return Array.from(this.nodes.values());
+    }
+    let result = [];
+    const hasDomain = !!filters.domain;
+    const hasStatus = !!filters.status;
+    const hasCapability = !!filters.capability;
+    const hasSearch = !!filters.search;
+    if (hasDomain && !hasCapability && !hasStatus && !hasSearch) {
+      const cached = this.cache.neuronsByDomain.get(filters.domain.toLowerCase());
+      if (cached && this.isCacheValid()) {
+        return cached;
       }
-      if (filters.capability) {
-        result = result.filter((n) => n.manifest.capabilities.some((c) => c.toLowerCase().includes(filters.capability.toLowerCase())));
+      result = Array.from(this.nodes.values()).filter(
+        (n) => n.manifest.domain.toLowerCase() === filters.domain.toLowerCase()
+      );
+      if (this.isCacheValid()) {
+        this.cache.neuronsByDomain.set(filters.domain.toLowerCase(), result);
       }
-      if (filters.status) {
-        result = result.filter((n) => n.status.toLowerCase() === filters.status.toLowerCase());
+      return result;
+    }
+    if (hasStatus && !hasDomain && !hasCapability && !hasSearch) {
+      const cached = this.cache.neuronsByStatus.get(filters.status.toLowerCase());
+      if (cached && this.isCacheValid()) {
+        return cached;
       }
-      if (filters.search) {
-        const q = filters.search.toLowerCase();
-        result = result.filter(
-          (n) => n.manifest.id.toLowerCase().includes(q) || n.manifest.domain.toLowerCase().includes(q) || n.manifest.capabilities.some((c) => c.toLowerCase().includes(q)) || (n.manifest.metadata?.description || "").toLowerCase().includes(q)
-        );
+      result = Array.from(this.nodes.values()).filter(
+        (n) => n.status.toLowerCase() === filters.status.toLowerCase()
+      );
+      if (this.isCacheValid()) {
+        this.cache.neuronsByStatus.set(filters.status.toLowerCase(), result);
       }
+      return result;
+    }
+    result = Array.from(this.nodes.values());
+    if (hasDomain) {
+      result = result.filter((n) => n.manifest.domain.toLowerCase() === filters.domain.toLowerCase());
+    }
+    if (hasCapability) {
+      result = result.filter((n) => n.manifest.capabilities.some((c) => c.toLowerCase().includes(filters.capability.toLowerCase())));
+    }
+    if (hasStatus) {
+      result = result.filter((n) => n.status.toLowerCase() === filters.status.toLowerCase());
+    }
+    if (hasSearch) {
+      const q = filters.search.toLowerCase();
+      result = result.filter(
+        (n) => n.manifest.id.toLowerCase().includes(q) || n.manifest.domain.toLowerCase().includes(q) || n.manifest.capabilities.some((c) => c.toLowerCase().includes(q)) || (n.manifest.metadata?.description || "").toLowerCase().includes(q)
+      );
     }
     return result;
   }
@@ -546,16 +594,25 @@ var NeuralMeshRegistry = class {
   }
   // --- PATHWAY ROUTING ENGINE & GRAPH TRAVERSAL ---
   findPathways(fromNeuronId, toNeuronId, requiredCaps) {
+    const cacheKey = `${fromNeuronId}->${toNeuronId}`;
+    const cached = this.cache.pathwayCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS * 2) {
+      return cached.result;
+    }
     const startNode = this.nodes.get(fromNeuronId);
     const endNode = this.nodes.get(toNeuronId);
     if (!startNode || !endNode) {
-      return {
+      const emptyResult = {
         direct_available: false,
         recommended_path: [],
         alternative_paths: [],
         estimated_latency_ms: 0
       };
+      this.cache.pathwayCache.set(cacheKey, { result: emptyResult, timestamp: Date.now() });
+      return emptyResult;
     }
+    const onlineNodes = Array.from(this.nodes.values()).filter((n) => n.status !== "offline");
+    const nodeMap = new Map(onlineNodes.map((n) => [n.manifest.id, n]));
     const paths = [];
     const queue = [
       { current: fromNeuronId, path: [fromNeuronId], latency: startNode.health.latency_ms }
@@ -568,11 +625,10 @@ var NeuralMeshRegistry = class {
         continue;
       }
       visited.add(current);
-      const currNode = this.nodes.get(current);
+      const currNode = nodeMap.get(current);
       if (!currNode) continue;
       const neighbors = new Set(currNode.manifest.dependencies || []);
-      for (const node of this.nodes.values()) {
-        if (node.status === "offline") continue;
+      for (const node of onlineNodes) {
         if (currNode.manifest.capabilities.some((c) => node.manifest.capabilities.includes(c)) || currNode.manifest.domain === "orchestration" && node.manifest.domain !== "orchestration") {
           if (neighbors.size < 8) {
             neighbors.add(node.manifest.id);
@@ -581,7 +637,7 @@ var NeuralMeshRegistry = class {
       }
       for (const next of neighbors) {
         if (!path2.includes(next) && path2.length < 6) {
-          const nextNode = this.nodes.get(next);
+          const nextNode = nodeMap.get(next);
           if (nextNode && nextNode.status !== "offline") {
             queue.push({
               current: next,
@@ -596,18 +652,20 @@ var NeuralMeshRegistry = class {
       paths.push([fromNeuronId, "entangled-multimodal-system-3", toNeuronId]);
     }
     paths.sort((a, b) => {
-      const latA = a.reduce((sum, id) => sum + (this.nodes.get(id)?.health.latency_ms || 20), 0);
-      const latB = b.reduce((sum, id) => sum + (this.nodes.get(id)?.health.latency_ms || 20), 0);
+      const latA = a.reduce((sum, id) => sum + (nodeMap.get(id)?.health.latency_ms || 20), 0);
+      const latB = b.reduce((sum, id) => sum + (nodeMap.get(id)?.health.latency_ms || 20), 0);
       return latA - latB;
     });
     const recommended = paths[0] || [fromNeuronId, toNeuronId];
-    const estLatency = recommended.reduce((sum, id) => sum + (this.nodes.get(id)?.health.latency_ms || 20), 0);
-    return {
+    const estLatency = recommended.reduce((sum, id) => sum + (nodeMap.get(id)?.health.latency_ms || 20), 0);
+    const result = {
       direct_available: recommended.length === 2,
       recommended_path: recommended,
       alternative_paths: paths.slice(1),
       estimated_latency_ms: estLatency
     };
+    this.cache.pathwayCache.set(cacheKey, { result, timestamp: Date.now() });
+    return result;
   }
   getPathways() {
     return Array.from(this.pathways.values());
@@ -763,6 +821,9 @@ var NeuralMeshRegistry = class {
   }
   // --- OBSERVABILITY, METRICS & ALERTS ---
   getMetricsOverview() {
+    if (this.cache.metricsCache && this.isCacheValid()) {
+      return this.cache.metricsCache.data;
+    }
     const nodesList = Array.from(this.nodes.values());
     const online = nodesList.filter((n) => n.status === "online").length;
     const degraded = nodesList.filter((n) => n.status === "degraded").length;
@@ -773,7 +834,7 @@ var NeuralMeshRegistry = class {
     const sortedLatencies = [...latencies].sort((a, b) => a - b);
     const p95Latency = sortedLatencies.length > 0 ? sortedLatencies[Math.floor(sortedLatencies.length * 0.95)] : 0;
     const totalRps = nodesList.reduce((sum, n) => sum + (n.health.requests_per_sec || 0), 0);
-    return {
+    const result = {
       total_nodes: nodesList.length,
       online_nodes: online,
       degraded_nodes: degraded,
@@ -788,6 +849,12 @@ var NeuralMeshRegistry = class {
       total_pathways_configured: this.pathways.size,
       total_traces_recorded: this.executionHistory.length
     };
+    this.cache.metricsCache = {
+      data: result,
+      timestamp: Date.now()
+    };
+    this.cacheValidUntil = Date.now() + CACHE_TTL_MS;
+    return result;
   }
   getMetricTrends() {
     return this.metricHistory;
