@@ -1,0 +1,17 @@
+apiVersion: v2
+name: sovereign-ledger
+description: Sovereign Ledger - Base-12 Radix Space Engine
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+maintainers:
+  - name: Sovereign Build
+    email: sovereign@local
+
+keywords:
+  - base12
+  - radix
+  - sovereign
+  - ledger
+  - quantizer
