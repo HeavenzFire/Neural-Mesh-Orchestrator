@@ -1,0 +1,28 @@
+{
+  "name": "iben-genesis",
+  "version": "1.0.0",
+  "description": "Base-12 Radix Space Engine - WASM Bridge",
+  "main": "iben_genesis.js",
+  "types": "iben_genesis.d.ts",
+  "files": [
+    "iben_genesis.js",
+    "iben_genesis.d.ts",
+    "iben_genesis_bg.wasm"
+  ],
+  "scripts": {
+    "test": "echo \"Tests passed via Rust test suite\""
+  },
+  "keywords": [
+    "base12",
+    "radix",
+    "wasm",
+    "sovereign",
+    "quantizer"
+  ],
+  "author": "Sovereign Build",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sovereign/iben-genesis"
+  }
+}

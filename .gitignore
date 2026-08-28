@@ -1,4 +1,44 @@
 ```
+# Dependencies
+node_modules/
+target/
+
+# Rust build artifacts
+**/*.rs.bk
+Cargo.lock
+
+# WASM build artifacts
+wasm-bridge-pkg/dist/
+wasm-bridge-pkg/node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Coverage reports
+coverage/
+htmlcov/
+*.coverage
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 # Rust build artifacts
 target/
 **/target/
