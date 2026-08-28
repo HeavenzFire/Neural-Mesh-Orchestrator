@@ -1,0 +1,6 @@
+{
+  "name": "Neural Mesh Orchestrator",
+  "description": "Enterprise-grade Neural Mesh orchestrator and capability registry connecting 256 repository nodes with dynamic pathway threading, real-time axon bus, failover routing, and deep observability.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
