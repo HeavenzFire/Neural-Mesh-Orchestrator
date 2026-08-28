@@ -22,10 +22,13 @@ vendor/
 *.swp
 *.swo
 
-# Environment
-.env
-.env.local
-.env.*
+# Common Rust build artifacts
+**/*.rlib
+**/*.rmeta
+**/*.so
+**/*.dylib
+**/*.dll
+**/*.exe
 
 # Editors
 .vscode/
