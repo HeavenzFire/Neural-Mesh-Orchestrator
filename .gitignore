@@ -1,4 +1,5 @@
 ```
+# Rust-specific ignores
 # Dependencies
 node_modules/
 target/
@@ -41,10 +42,26 @@ __pycache__/
 .Python
 # Rust build artifacts
 target/
-**/target/
-
-# Cargo lock file (optional, but commonly ignored in libraries)
 Cargo.lock
+**/*.rs.bk
+
+# Dependencies
+vendor/
+
+# Compiled and build artifacts
+**/*.o
+**/*.obj
+**/*.a
+**/*.lib
+**/*.dll
+**/*.so
+**/*.dylib
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
 
 # Common Rust build artifacts
 **/*.rlib
@@ -54,13 +71,21 @@ Cargo.lock
 **/*.dll
 **/*.exe
 
-# Temporary build files
-**/.rustc_info.json
-**/CACHEDIR.TAG
-**/.cargo-artifact-lock
-**/.cargo-build-lock
-**/.cargo-lock
-**/.fingerprint/
-**/deps/
+# Editors
+.vscode/
+.idea/
+**/.DS_Store
+Thumbs.db
 
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Cache directories
+**/__pycache__/
+**/*.pyc
+**/.mypy_cache/
+**/.pytest_cache/
+**/.ruff_cache/
 ```
