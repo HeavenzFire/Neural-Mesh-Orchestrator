@@ -39,4 +39,28 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+# Rust build artifacts
+target/
+**/target/
+
+# Cargo lock file (optional, but commonly ignored in libraries)
+Cargo.lock
+
+# Common Rust build artifacts
+**/*.rlib
+**/*.rmeta
+**/*.so
+**/*.dylib
+**/*.dll
+**/*.exe
+
+# Temporary build files
+**/.rustc_info.json
+**/CACHEDIR.TAG
+**/.cargo-artifact-lock
+**/.cargo-build-lock
+**/.cargo-lock
+**/.fingerprint/
+**/deps/
+
 ```
