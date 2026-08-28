@@ -1,4 +1,30 @@
 ```
+# Build artifacts
+dist/
+build/
+
 # Dependencies
 node_modules/
+
+# Environment
+.env
+.env.local
+.env.*
+
+# Logs
+*.log
+
+# Editors
+.vscode/
+.idea/
+
+# Temp files
+*.tmp
+*.swp
+
+# Compiled files
+*.o
+*.obj
+*.cjs
+*.cjs.map
 ```
