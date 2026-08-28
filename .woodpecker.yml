@@ -1,0 +1,145 @@
+stages:
+  - test
+  - build
+  - benchmark
+  - package
+  - deploy
+
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  RUST_VERSION: "1.75.0"
+
+.test_template: &test_template
+  image: rust:${RUST_VERSION}
+  before_script:
+    - rustc --version
+    - cargo --version
+
+test:core:
+  <<: *test_template
+  stage: test
+  script:
+    - cd quantizer-core
+    - cargo test --release --verbose
+  artifacts:
+    reports:
+      junit: target/release/junit.xml
+
+test:sidecar:
+  <<: *test_template
+  stage: test
+  script:
+    - cd sidecar
+    - cargo test --release --verbose
+
+test:wasm:
+  <<: *test_template
+  stage: test
+  script:
+    - curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+    - cd wasm-bridge
+    - wasm-pack test --headless --firefox
+
+build:native:
+  <<: *test_template
+  stage: build
+  script:
+    - cd quantizer-core && cargo build --release
+    - cd sidecar && cargo build --release
+    - mkdir -p artifacts/binaries
+    - cp sidecar/target/release/sidecar-api artifacts/binaries/
+  artifacts:
+    paths:
+      - artifacts/binaries/
+
+build:docker:
+  image: docker:latest
+  stage: build
+  services:
+    - docker:dind
+  script:
+    - docker build -t sovereign-ledger:latest .
+    - docker save sovereign-ledger:latest > artifacts/sovereign-ledger.tar
+  artifacts:
+    paths:
+      - artifacts/sovereign-ledger.tar
+
+benchmark:performance:
+  <<: *test_template
+  stage: benchmark
+  script:
+    - chmod +x bench/run_benchmarks.sh
+    - ./bench/run_benchmarks.sh | tee bench/results.txt
+  artifacts:
+    paths:
+      - bench/results.txt
+    reports:
+      performance: bench/results.txt
+
+package:npm:
+  image: node:20
+  stage: package
+  script:
+    - cd wasm-bridge-pkg
+    - npm pack
+    - mv *.tgz ../../artifacts/npm/
+  artifacts:
+    paths:
+      - artifacts/npm/
+
+package:helm:
+  image: alpine:latest
+  stage: package
+  before_script:
+    - apk add --no-cache helm
+  script:
+    - helm package ci/templates/deploy/helm/sovereign-ledger -d artifacts/helm/
+  artifacts:
+    paths:
+      - artifacts/helm/
+
+package:debian:
+  <<: *test_template
+  stage: package
+  script:
+    - mkdir -p artifacts/debian/DEBIAN
+    - echo "Package: sovereign-ledger" > artifacts/debian/DEBIAN/control
+    - echo "Version: 1.0.0" >> artifacts/debian/DEBIAN/control
+    - echo "Architecture: amd64" >> artifacts/debian/DEBIAN/control
+    - echo "Maintainer: Sovereign Build" >> artifacts/debian/DEBIAN/control
+    - echo "Description: Base-12 Radix Space Engine" >> artifacts/debian/DEBIAN/control
+    - cp sidecar/target/release/sidecar-api artifacts/debian/usr/local/bin/ 2>/dev/null || true
+    - cd artifacts/debian && dpkg-deb --build . ../sovereign-ledger_1.0.0_amd64.deb
+  artifacts:
+    paths:
+      - artifacts/sovereign-ledger_1.0.0_amd64.deb
+
+deploy:staging:
+  image: alpine:latest
+  stage: deploy
+  when: manual
+  before_script:
+    - apk add --no-cache curl helm kubectl
+  script:
+    - echo "Deploying to staging environment..."
+    - helm upgrade --install sovereignLedger-staging artifacts/helm/sovereign-ledger-*.tgz \
+        --namespace staging --create-namespace \
+        --set image.tag=staging
+  environment:
+    name: staging
+
+deploy:production:
+  image: alpine:latest
+  stage: deploy
+  when: manual
+  needs:
+    - deploy:staging
+  before_script:
+    - apk add --no-cache curl helm kubectl
+  script:
+    - echo "Deploying to production environment..."
+    - helm upgrade --install sovereignLedger-prod artifacts/helm/sovereign-ledger-*.tgz \
+        --namespace production --create-namespace \
+        --set image.tag=latest
+  environment:
+    name: production
