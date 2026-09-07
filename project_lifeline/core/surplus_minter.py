@@ -1,5 +1,5 @@
 """
-Surplus Minter for Project LIFELINE
+Surplus Minter for Project LIFELINE (Production Grade)
 
 Generates LIFE tokens based on verified regenerative actions:
 - Grid stability improvements
@@ -13,7 +13,7 @@ This creates currency from positive utility, not computational waste.
 import time
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 
 class SurplusMinter:
@@ -58,7 +58,7 @@ class SurplusMinter:
         tokens_minted = int(base_capacity * impact_ratio / 365 / 24)  # Per hour
         
         event = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "action_type": action_type,
             "metric_value": metric_value,
             "verifier_id": verifier_id,

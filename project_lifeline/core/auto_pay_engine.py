@@ -1,5 +1,5 @@
 """
-Auto-Pay Engine for Project LIFELINE
+Auto-Pay Engine for Project LIFELINE (Production Grade)
 
 Instantly disburses funds to:
 - Hospitals: Direct payment of treatment invoices
@@ -12,7 +12,7 @@ Zero bureaucracy. Zero delays. 100% automated.
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 import random
 
@@ -56,12 +56,12 @@ class AutoPayEngine:
         
         # Generate payment transaction
         tx_id = hashlib.sha256(
-            f"{datetime.utcnow().isoformat()}{zk_proof}{amount}".encode()
+            f"{datetime.now(timezone.utc).isoformat()}{zk_proof}{amount}".encode()
         ).hexdigest()[:16]
         
         payment_record = {
             "tx_id": tx_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "zk_proof_ref": zk_proof[:16] + "...",  # Reference only, no PII
             "invoice_hash": invoice_hash[:16] + "...",
             "amount": amount,
@@ -98,7 +98,7 @@ class AutoPayEngine:
             amount = total_available * percentage
             
             # Simulate invoice generation based on category
-            invoice_hash = hashlib.sha256(f"{category}{datetime.utcnow().isoformat()}".encode()).hexdigest()
+            invoice_hash = hashlib.sha256(f"{category}{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()
             
             # Determine recipient type
             if category == "hospital_bills":

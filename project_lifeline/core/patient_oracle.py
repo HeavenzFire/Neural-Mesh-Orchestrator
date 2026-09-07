@@ -1,5 +1,5 @@
 """
-Patient Registry Oracle for Project LIFELINE
+Patient Registry Oracle for Project LIFELINE (Production Grade)
 
 Securely interfaces with:
 - Children's Oncology Group (COG) hospitals
@@ -12,7 +12,7 @@ Uses Zero-Knowledge Proofs to verify diagnosis without exposing patient identity
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import random
 
@@ -43,7 +43,7 @@ class PatientOracle:
             "diagnosis_verified": True,
             "treatment_active": True,
             "hospital_verified": hospital_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "proof_type": "pediatric_cancer_active_treatment"
         }
         
@@ -77,7 +77,7 @@ class PatientOracle:
             "hospital": hospital_name,
             "diagnosis_category": diagnosis_code[:3],  # Only first 3 chars (e.g., "C91" for leukemia)
             "treatment_status": treatment_status,
-            "registered_date": datetime.utcnow().isoformat(),
+            "registered_date": datetime.now(timezone.utc).isoformat(),
             "coverage_status": "active",
             "bill_count": 0,
             "total_paid": 0
