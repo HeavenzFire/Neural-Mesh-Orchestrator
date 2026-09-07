@@ -47,20 +47,38 @@ Civilization runs on fragile, siloed infrastructure. Power grids, logistics netw
 ## 🔮 The Vision
 Continuity Core becomes the **autonomic nervous system of civilization**—always on, always healing, always invisible. Revenue isn't the goal; it's the byproduct of making collapse impossible.
 
+### 💰 The Tithe Protocol: Profit as Philanthropy
+We operate on a radical economic model:
+- **20%** of all revenue sustains operations (compute, maintenance, core team).
+- **80%** flows directly to the **Vulnerability Fund**:
+  - 50% Disaster Relief (immediate liquidity for crisis zones)
+  - 30% Community Resilience (micro-grids, water purification)
+  - 20% Open Source Defense (free access for NGOs and vulnerable nations)
+
+**We are not building a charity. We are building an engine where profit *is* philanthropy.**
+
 ---
 
-## 🧪 Live Demonstration
-Run the simulation to see the hive avert a simulated catastrophe:
+## 🧪 Live Demonstrations
 
+### 1. Run the Hive Simulation (Technical Core)
 ```bash
-cd continuity_core
 python agents/hive_engine.py
 ```
-
 **Observe**:
 1. Stable operation at ~92% coherence.
 2. Sudden shock injection (3 nodes hit critical failure).
 3. Agents swarm to redistribute load autonomously.
 4. System stabilizes without human intervention.
+
+### 2. Test the Tithe Protocol (Economic Engine)
+```bash
+python agents/tithe_protocol.py
+```
+**Observe**:
+1. Revenue events from municipal contracts and insurers.
+2. Automatic 80/20 split executed in real-time.
+3. Vulnerability Fund allocated to Disaster Relief, Community Resilience, and Open Source Defense.
+4. Full transparency ledger generated for public audit.
 
 This is the future of infrastructure: **self-healing, coherent, and unbreakable**.
