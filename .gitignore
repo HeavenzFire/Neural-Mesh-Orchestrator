@@ -1,4 +1,4 @@
-```markdown
+```
 # Compiled and build artifacts
 *.pyc
 __pycache__/
@@ -16,7 +16,7 @@ node_modules/
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
 .vscode/
@@ -27,26 +27,22 @@ coverage/
 htmlcov/
 .coverage
 
-# Distribution artifacts
-dist/
-build/
-target/
-*.egg-info/
-
 # Python specific
+*.pyc
 *.pyo
 *.pyd
+.Python
 *.so
-*.dylib
+*.egg-info/
+.eggs/
 
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
+# Backup files
+*~
+*.bak
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```
