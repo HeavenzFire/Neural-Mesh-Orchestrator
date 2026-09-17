@@ -2,12 +2,21 @@
 # Dependencies
 .venv/
 venv/
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
 # Environment
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Dependencies
+.venv/
+venv/
 .env
 .env.local
 *.env.*
@@ -24,4 +33,22 @@ __pycache__/
 dist/
 build/
 target/
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Temporary files
+*.tmp
+.DS_Store
+Thumbs.db
 ```
