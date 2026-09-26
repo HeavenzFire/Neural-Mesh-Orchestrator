@@ -1,0 +1,9 @@
+{
+  "architecture": "amd64", "os": "linux", "created": "2025-01-01T00:00:00Z",
+  "config": {
+    "Env": ["GEMINI_API_KEY=", "LOCAL_FALLBACK_ONLY=true", "NODE_ENV=production"],
+    "NetworkDisabled": true,
+    "Entrypoint": ["/app/app/entrypoint.sh"]
+  },
+  "builder": "sovereign-build-nodaemon/1.0"
+}

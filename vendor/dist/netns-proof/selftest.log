@@ -1,0 +1,31 @@
+
+[1msovereign-crypto: HashChainLedger[0m
+  [32m✓[0m chains blocks and validates
+  [32m✓[0m detects tampering (fail-closed)
+  [32m✓[0m HMAC sign/verify head
+  [32m✓[0m rejects empty HMAC secret (fail-closed)
+  [32m✓[0m signed envelope round-trips with the original secret out-of-band
+  [32m✓[0m signed envelope rejects wrong secret and forged history
+
+[1msovereign-crypto: MerkleTree[0m
+  [32m✓[0m proof verifies for every leaf (pre-hashed contract)
+  [32m✓[0m verifyItem accepts raw preimages, rejects altered ones
+  [32m✓[0m raw item passed to verify() fails (documented contract)
+  [32m✓[0m tampered proof steps and forged roots are rejected
+
+[1msovereign-ternary[0m
+  [32m✓[0m round-trips integers -100..100
+  [32m✓[0m known encodings
+  [32m✓[0m add/mul on ternary strings
+  [32m✓[0m Kleene tri-valued logic tables
+  [32m✓[0m byte<->trits codec
+
+[1msovereign-http: local loopback server (no external egress)[0m
+  [32m✓[0m GET/POST roundtrip against in-process server
+
+[1msovereign-router: failover & offline guarantees[0m
+  [32m✓[0m falls back to heuristic when all providers unreachable (offline)
+  [32m✓[0m uses primary provider when reachable (local mock only)
+  [32m✓[0m circuit breaker opens after repeated failures
+
+19 tests | [32m19 passed[0m | 39ms

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+  "config": { "mediaType": "application/vnd.oci.image.config.v1+json", "digest": "sha256:26b59cd40abd3a6955253cf61888bce65157cb6e343fc2373078a72d21da2092", "size": 301 },
+  "layers": [
+    { "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip", "digest": "sha256:c78d1ebe082a6b7d77c1e188d69d4a751149ca90999dbc8dfe72f9158420905d", "size": 13717 }
+  ],
+  "isolation_note": "runtime isolation enforced externally: docker --network none OR unshare -rn (loopback-only netns)"
+}

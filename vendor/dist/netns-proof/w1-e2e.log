@@ -1,0 +1,7 @@
+  ✓ library routes to heuristic_fallback when no local engine is up
+  ✓ telemetry flags is_fallback=true
+  ✓ telemetry reports execution_time_ms
+  ✓ fallback payload is valid JSON with engine tag
+  ✓ /health reports airgap mode
+  ✓ HTTP /route returns fallback telemetry end-to-end
+W1 E2E: ALL PASS

@@ -9,7 +9,7 @@
  * Validated against RFC 8032 §7.1 test vectors 1 & 2 (vendor_selftest).
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 const Q = (1n << 255n) - 19n;                        // field prime 2^255-19
 const L = (1n << 252n) + 27742317777372353535851937790883648493n; // group order
@@ -27,12 +27,47 @@ const I_ROOT = powmod(2n, (Q - 1n) / 4n, Q);         // sqrt(-1) in GF(p)
 
 type Point = [bigint, bigint, bigint, bigint]; // extended coords (X, Y, Z, T): x=X/Z, y=Y/Z, xy=T/Z
 
+/** RFC 8032 §6.1 recover-x: x = sqrt((y²−1)/(dy²+1)), returned EVEN.
+ *  For a valid curve y this is always a square; callers that need strict
+ *  decoding must additionally verify on-curve membership (decodepoint does
+ *  so via isoncurve()). */
+/** Modular sqrt for prime field, via Tonelli-Shanks (general, no p≡5/8
+ *  shortcut assumptions — the earlier shortcut attempt silently produced
+ *  wrong roots and cost us an RFC-vector failure). Returns r with r²≡a,
+ *  or null when a is a quadratic non-residue (Euler criterion). */
+function modsqrt(a: bigint): bigint | null {
+  a = mod(a, Q);
+  if (a === 0n) return 0n;
+  if (powmod(a, (Q - 1n) / 2n, Q) !== 1n) return null;         // Euler: non-residue
+  // Factor Q-1 = s·2^e with s odd.
+  let e = 0n; let s = Q - 1n;
+  while ((s & 1n) === 0n) { s >>= 1n; e++; }
+  // Find a quadratic non-residue z by trial from 2 upward.
+  let z = 2n;
+  while (powmod(z, (Q - 1n) / 2n, Q) !== Q - 1n) z++;
+  let c = powmod(z, s, Q);
+  let r = powmod(a, (s + 1n) / 2n, Q);
+  let t = powmod(a, s, Q);
+  let m = e;
+  while (true) {
+    if (t === 1n) return r;
+    // find least i (0 < i < m) with t^(2^i) == 1
+    let i = 0n; let tmp = mod(t * t, Q);
+    while (tmp !== 1n) { tmp = mod(tmp * tmp, Q); i++; if (i === m) return null; }
+    const b = powmod(c, 1n << (m - i - 1n), Q);
+    m = i; c = mod(b * b, Q); r = mod(r * b, Q); t = mod(t * c, Q);
+  }
+}
+
+/** RFC 8032 §6.1 recover-x: x = sqrt((y²−1)/(dy²+1)), returned EVEN.
+ *  Throws on non-square (invalid curve y). */
 function xrecover(y: bigint): bigint {
-  const xx = mod((y * y - 1n) * inv(mod(mod(Dv * y, Q) * y, Q) + 1n, Q), Q);
-  let x = powmod(xx, (Q + 3n) / 8n, Q);
-  if (mod(x * x - xx, Q) !== 0n) x = mod(x * I_ROOT, Q);
-  if ((x & 1n) === 1n) x = Q - x;
-  return x;
+  const num = mod(y * y - 1n, Q);
+  const den = mod(Dv * y * y + 1n, Q);
+  const xx = mod(num * inv(den, Q), Q);
+  const root = modsqrt(xx);
+  if (root === null) throw new Error('ed25519: non-square, invalid point');
+  return (root & 1n) === 0n ? root : Q - root;    // canonical: even root
 }
 
 const By = mod(4n * inv(5n, Q), Q);
@@ -43,8 +78,8 @@ const IDENTITY: Point = [0n, 1n, 1n, 0n];
 /** Unified addition (Hisil et al., "Twisted Edwards Curves Revisited", a=-1). */
 function edwardsAdd(Pp: Point, Qp: Point): Point {
   const [x1, y1, z1, t1] = Pp, [x2, y2, z2, t2] = Qp;
-  const a = mod((y1 - x1) * (y2 + x1), Q);
-  const b = mod((y1 + x1) * (y2 - x1), Q);
+  const a = mod((y1 - x1) * (y2 - x2), Q);
+  const b = mod((y1 + x1) * (y2 + x2), Q);
   const c = mod(mod(mod(t1 * 2n, Q) * Dv, Q) * t2, Q);
   const dd = mod(mod(z1 * 2n, Q) * z2, Q);
   const e = mod(b - a, Q), f = mod(dd - c, Q), g = mod(dd + c, Q), h = mod(b + a, Q);
@@ -103,7 +138,8 @@ function encodepoint(Pp: Point): Buffer {
   const [x, y, z] = Pp;
   const zi = inv(z, Q);
   const xf = mod(x * zi, Q), yf = mod(y * zi, Q);
-  return intTo32Le(yf | ((xf & 1n) << 255n));
+  const withSign = (xf & 1n) === 1n ? yf | (1n << 255n) : yf;
+  return intTo32Le(withSign);
 }
 /** Affine membership: -x² + y² = 1 + d·x²·y²  (plus extended-coord consistency). */
 function isoncurve(Pp: Point): boolean {
@@ -118,9 +154,10 @@ function isoncurve(Pp: Point): boolean {
 function decodepoint(s: Buffer): Point {
   if (s.length !== 32) throw new Error('ed25519: point must be 32 bytes');
   const signBit = BigInt((s[31] >> 7) & 1);
-  const y = leBytesToInt(s.subarray(0, 31)) | (signBit << 255n);
-  let x = xrecover(mod(y, Q));
-  if ((x & 1n) !== signBit) x = Q - x;
+  const y = leBytesToInt(s) & ((1n << 255n) - 1n);   // strip high sign bit, keep low 255 bits
+  let x = xrecover(mod(y, Q));                        // returns EVEN root
+  if ((x & 1n) !== signBit) x = Q - x;                // flip only if parity mismatches sign
+  if (x === 0n && signBit === 1n) throw new Error('ed25519: illegal zero-x with sign bit');
   const Pp: Point = [x, mod(y, Q), 1n, mod(x * y, Q)];
   if (!isoncurve(Pp)) throw new Error('ed25519: point not on curve');
   return Pp;
@@ -154,7 +191,7 @@ export function publicKeyFromSeed(seedHex: string): string {
 export function generateKeypair(seedHex?: string): Ed25519KeyPair {
   const seed = seedHex
     ? Buffer.from(seedHex, 'hex')
-    : require('node:crypto').randomBytes(32) as Buffer;
+    : randomBytes(32);
   if (seed.length !== 32) throw new Error('ed25519: seed must be 32 bytes');
   const hex = seed.toString('hex');
   return { seedHex: hex, publicHex: publicKeyFromSeed(hex) };

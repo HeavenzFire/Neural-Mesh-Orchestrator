@@ -39,10 +39,42 @@ describe('sovereign-crypto: HashChainLedger', () => {
     if (!sigOk) throw new Error('valid HMAC signature failed to verify');
     expect(l.verifySignature('deadbeef'.repeat(8))).toBe(false);
   });
+  it('rejects empty HMAC secret (fail-closed)', () => {
+    let threw = false;
+    try { new HashChainLedger('   '); } catch { threw = true; }
+    expect(threw).toBe(true);
+  });
+  it('signed envelope round-trips with the original secret out-of-band', () => {
+    const l = new HashChainLedger('origin-key');
+    l.append('boot'); l.append('route'); l.append('seal');
+    const env = l.exportSignedJSON();
+    const imported = HashChainLedger.importSignedJSON(env, 'origin-key');
+    expect(imported.validate().ok).toBe(true);
+    // history authenticates: re-signing under the same key verifies
+    expect(imported.verifySignature(l.signHead())).toBe(true);
+  });
+  it('signed envelope rejects wrong secret and forged history', () => {
+    const l = new HashChainLedger('origin-key');
+    l.append('a'); l.append('b');
+    const env = JSON.parse(l.exportSignedJSON());
+    let wrongKey = false;
+    try { HashChainLedger.importSignedJSON(JSON.stringify(env), 'attacker-key'); }
+    catch { wrongKey = true; }
+    expect(wrongKey).toBe(true);
+    // attacker rewrites block 0 AND recomputes the whole chain — validate()
+    // would pass on the rewritten chain, but the envelope HMAC must not.
+    const forged = new HashChainLedger('attacker-own-key');
+    forged.append('innocent-history');
+    const forgedEnv = JSON.parse(forged.exportSignedJSON());
+    let forgedRejected = false;
+    try { HashChainLedger.importSignedJSON(JSON.stringify(forgedEnv), 'origin-key'); }
+    catch { forgedRejected = true; }
+    expect(forgedRejected).toBe(true);
+  });
 });
 
 describe('sovereign-crypto: MerkleTree', () => {
-  it('proof verifies for every leaf', () => {
+  it('proof verifies for every leaf (pre-hashed contract)', () => {
     const items = ['alpha', 'beta', 'gamma', 'delta', 'epsilon'];
     const tree = new MerkleTree(items);
     const root = tree.root();
@@ -51,11 +83,37 @@ describe('sovereign-crypto: MerkleTree', () => {
       if (!ok) throw new Error(`proof failed at leaf ${i}`);
     }
   });
-  it('wrong leaf fails verification', () => {
-    const tree = new MerkleTree(['a', 'b', 'c', 'd']);
-    const badLeaf = sha256('not-in-tree');
-    const ok = MerkleTree.verify(badLeaf, tree.proof(0), tree.root());
-    if (ok) throw new Error('bad leaf should not verify');
+  it('verifyItem accepts raw preimages, rejects altered ones', () => {
+    const items = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const tree = new MerkleTree(items);
+    const root = tree.root();
+    expect(MerkleTree.verifyItem('c', tree.proof(2), root)).toBe(true);
+    // one-byte alteration of the raw preimage must fail
+    expect(MerkleTree.verifyItem('C', tree.proof(2), root)).toBe(false);
+    expect(MerkleTree.verifyItem('corrupted-payload', tree.proof(0), root)).toBe(false);
+  });
+  it('raw item passed to verify() fails (documented contract)', () => {
+    const tree = new MerkleTree(['x', 'y']);
+    // Passing the RAW item instead of tree.leaves[0] must NOT verify —
+    // this is the documented VERIFY CONTRACT (pre-hashed leaves only).
+    expect(MerkleTree.verify('x', tree.proof(0), tree.root())).toBe(false);
+  });
+  it('tampered proof steps and forged roots are rejected', () => {
+    const tree = new MerkleTree(['p', 'q', 'r', 's', 't', 'u']);
+    const root = tree.root();
+    const good = tree.proof(1);
+    // mutate a sibling hash inside the proof array
+    const mutated = JSON.parse(JSON.stringify(good));
+    mutated[0].hash = sha256('evil-sibling');
+    expect(MerkleTree.verify(tree.leaves[1], mutated, root)).toBe(false);
+    // flip the position tag
+    const flipped = JSON.parse(JSON.stringify(good));
+    flipped[0].position = flipped[0].position === 'left' ? 'right' : 'left';
+    expect(MerkleTree.verify(tree.leaves[1], flipped, root)).toBe(false);
+    // legitimate proof against a forged root
+    expect(MerkleTree.verify(tree.leaves[1], good, sha256('fake-root'))).toBe(false);
+    // non-hex / wrong-length leaf input fails closed
+    expect(MerkleTree.verify('short', good, root)).toBe(false);
   });
 });
 

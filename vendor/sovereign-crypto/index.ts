@@ -29,12 +29,39 @@ function blockPreimage(b: Omit<LedgerBlock, 'hash'>): string {
   return `${b.index}|${b.timestamp}|${b.event}|${JSON.stringify(b.payload)}|${b.prevHash}`;
 }
 
+export interface SignedEnvelope {
+  format: 'sovereign-ledger-v1';
+  genesis: string;
+  blocks: LedgerBlock[];
+  /** HMAC over the canonical head attestation string, keyed by the ledger secret. */
+  envelopeSig: string;
+  headHash: string;
+}
+
+/** Canonical preimage for a ledger head — identical on both sides of export/import. */
+export function headAttestation(genesis: string, blocks: LedgerBlock[]): string {
+  const h = blocks[blocks.length - 1];
+  return `sovereign-ledger-v1|${genesis}|${blocks.length}|${h ? h.hash : GENESIS_HASH}`;
+}
+
 export class HashChainLedger {
   private blocks: LedgerBlock[] = [];
   private secret: Buffer;
 
   constructor(hmacSecret?: string) {
+    // Fail closed: an explicit empty/whitespace secret is rejected rather than
+    // silently falling back to a random one (which would break re-import signing).
+    if (hmacSecret !== undefined && hmacSecret.trim() === '') {
+      throw new Error('sovereign-crypto: empty HMAC secret rejected');
+    }
     this.secret = Buffer.from(hmacSecret ?? randomUUID());
+  }
+
+  /** Rebind the signing secret (e.g. supply the original key out-of-band after import). */
+  withSecret(secret: string): this {
+    if (secret.trim() === '') throw new Error('sovereign-crypto: empty HMAC secret rejected');
+    this.secret = Buffer.from(secret);
+    return this;
   }
 
   append(event: string, payload: unknown = null): LedgerBlock {
@@ -77,10 +104,59 @@ export class HashChainLedger {
     return JSON.stringify({ genesis: GENESIS_HASH, blocks: this.blocks }, null, 2);
   }
 
+  /**
+   * Signed export. The envelope carries an HMAC over the canonical head
+   * attestation so a verifier holding the secret can authenticate history —
+   * internal linkage (validate()) alone never proves provenance.
+   */
+  exportSignedJSON(): string {
+    const env: SignedEnvelope = {
+      format: 'sovereign-ledger-v1',
+      genesis: GENESIS_HASH,
+      blocks: this.blocks,
+      headHash: this.head()?.hash ?? GENESIS_HASH,
+      envelopeSig: createHmac('sha256', this.secret)
+        .update(headAttestation(GENESIS_HASH, this.blocks))
+        .digest('hex'),
+    };
+    return JSON.stringify(env, null, 2);
+  }
+
   static importJSON(json: string): HashChainLedger {
     const data = JSON.parse(json) as { blocks: LedgerBlock[] };
+    // Reject unsigned-envelope shape drift fail-closed.
+    if (!Array.isArray(data?.blocks)) {
+      throw new Error('sovereign-crypto: importJSON missing blocks array');
+    }
     const l = new HashChainLedger('static-import');
     l.blocks = data.blocks;
+    return l;
+  }
+
+  /**
+   * Import a signed envelope and verify it against the expected secret.
+   * Throws on any mismatch (bad signature, forged length, swapped head).
+   * NOTE: the returned ledger's own signing secret is deliberately NOT taken
+   * from the envelope — callers rebind it out-of-band via withSecret().
+   */
+  static importSignedJSON(json: string, secret: string): HashChainLedger {
+    const env = JSON.parse(json) as SignedEnvelope;
+    if (env.format !== 'sovereign-ledger-v1' || !Array.isArray(env.blocks)) {
+      throw new Error('sovereign-crypto: invalid signed envelope schema');
+    }
+    const expected = createHmac('sha256', Buffer.from(secret))
+      .update(headAttestation(env.genesis, env.blocks))
+      .digest('hex');
+    const given = Buffer.from(env.envelopeSig ?? '', 'hex');
+    const expBuf = Buffer.from(expected, 'hex');
+    if (given.length !== expBuf.length || !timingSafeEqual(given, expBuf)) {
+      throw new Error('sovereign-crypto: signed envelope HMAC verification failed');
+    }
+    const l = new HashChainLedger(secret);
+    l.blocks = env.blocks;
+    // double-check internal linkage of imported history too
+    const v = l.validate();
+    if (!v.ok) throw new Error(`sovereign-crypto: imported chain broken at ${v.brokenAt}: ${v.reason}`);
     return l;
   }
 
@@ -102,12 +178,35 @@ export class HashChainLedger {
 
 /* ----------------------------- Merkle tree ------------------------------ */
 
+/**
+ * Domain-separated SHA-256 Merkle tree (RFC 6962-style prefixes):
+ *   leaf  = H(0x00 || item)          — prevents leaf/node collision attacks
+ *   node  = H(0x01 || left || right)
+ *
+ * VERIFY CONTRACT (explicit, per security review):
+ *   `MerkleTree.verify` consumes a PRE-HASHED leaf — callers must pass
+ *   `tree.leaves[index]` (or the equivalent `leafHash(item)` value), never
+ *   the raw original item. A convenience wrapper `verifyItem()` is provided
+ *   for callers holding raw data.
+ */
+
+const LEAF_PREFIX = Buffer.from([0x00]);
+const NODE_PREFIX = Buffer.from([0x01]);
+
+export function leafHash(item: string | Buffer): string {
+  return createHash('sha256').update(LEAF_PREFIX).update(item).digest('hex');
+}
+
+export function nodeHash(left: string, right: string): string {
+  return createHash('sha256').update(NODE_PREFIX).update(left).update(right).digest('hex');
+}
+
 export class MerkleTree {
   readonly leaves: string[];
   private levels: string[][] = [];
 
   constructor(items: (string | Buffer)[]) {
-    this.leaves = items.map((i) => sha256(i));
+    this.leaves = items.map(leafHash);
     if (this.leaves.length === 0) {
       this.levels = [['']];
       return;
@@ -119,7 +218,7 @@ export class MerkleTree {
       for (let i = 0; i < level.length; i += 2) {
         const a = level[i];
         const b = i + 1 < level.length ? level[i + 1] : a; // duplicate last node
-        next.push(sha256(a + b));
+        next.push(nodeHash(a, b));
       }
       this.levels.push(next);
       level = next;
@@ -146,15 +245,26 @@ export class MerkleTree {
     return path;
   }
 
+  /** Verify against a PRE-HASHED leaf (see VERIFY CONTRACT above). Fail-closed on empty path vs non-singleton root. */
   static verify(
-    leaf: string,
+    prehashedLeaf: string,
     path: { hash: string; position: 'left' | 'right' }[],
     root: string
   ): boolean {
-    let acc = leaf;
+    if (typeof prehashedLeaf !== 'string' || prehashedLeaf.length !== 64) return false;
+    let acc = prehashedLeaf;
     for (const step of path) {
-      acc = step.position === 'left' ? sha256(step.hash + acc) : sha256(acc + step.hash);
+      acc = step.position === 'left' ? nodeHash(step.hash, acc) : nodeHash(acc, step.hash);
     }
     return acc === root;
+  }
+
+  /** Convenience: verify from the RAW item (hashes it with the leaf prefix first). */
+  static verifyItem(
+    item: string | Buffer,
+    path: { hash: string; position: 'left' | 'right' }[],
+    root: string
+  ): boolean {
+    return MerkleTree.verify(leafHash(item), path, root);
   }
 }
