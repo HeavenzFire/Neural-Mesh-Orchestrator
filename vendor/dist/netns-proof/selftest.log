@@ -28,4 +28,4 @@
   [32m✓[0m uses primary provider when reachable (local mock only)
   [32m✓[0m circuit breaker opens after repeated failures
 
-19 tests | [32m19 passed[0m | 39ms
+19 tests | [32m19 passed[0m | 37ms

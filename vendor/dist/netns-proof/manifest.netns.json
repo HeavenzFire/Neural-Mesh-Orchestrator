@@ -1,0 +1,51 @@
+{
+  "format": "sovereign-ledger-v1",
+  "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
+  "blocks": [
+    {
+      "index": 0,
+      "timestamp": "2026-09-26T19:40:25.252Z",
+      "event": "source-commit",
+      "payload": {
+        "commit": "4121d00f2fa6fc2ec06dce2f22abe86616ebd0b3"
+      },
+      "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "a0bdb657a515092a86d8f2cb91f3537fd275307e7277f21ed3899c890ec49bb2"
+    },
+    {
+      "index": 1,
+      "timestamp": "2026-09-26T19:40:25.253Z",
+      "event": "isolation-mode",
+      "payload": {
+        "mechanism": "unshare -rn (user+net ns, loopback-only)",
+        "docker_equivalent": "--network none"
+      },
+      "prevHash": "a0bdb657a515092a86d8f2cb91f3537fd275307e7277f21ed3899c890ec49bb2",
+      "hash": "7ff9766225b2d7fd5f2193cd5d2ee8c61d5bf39045a5a18017813f90eddf75a7"
+    },
+    {
+      "index": 2,
+      "timestamp": "2026-09-26T19:40:25.254Z",
+      "event": "selftest-exit",
+      "payload": {
+        "code": 0,
+        "log_sha256": "4a35e362a75717ca69d860f09770808ec9c71282f4fdbf34e2b72a38bbac2e26"
+      },
+      "prevHash": "7ff9766225b2d7fd5f2193cd5d2ee8c61d5bf39045a5a18017813f90eddf75a7",
+      "hash": "a0eb3c70c117d41de0cdcce8bbed8cd262e4e4b56f1f7df36b3f1002f9a125f7"
+    },
+    {
+      "index": 3,
+      "timestamp": "2026-09-26T19:40:25.254Z",
+      "event": "w1-e2e-exit",
+      "payload": {
+        "code": 0,
+        "log_sha256": "2a4aa17dbc2c4afdbd48729d9917c5488a4431d9644025285cd9dcd81213e518"
+      },
+      "prevHash": "a0eb3c70c117d41de0cdcce8bbed8cd262e4e4b56f1f7df36b3f1002f9a125f7",
+      "hash": "025ca9faf20c8a2d073b2750abc036bea2818ddde16185f64662f261c39269d0"
+    }
+  ],
+  "headHash": "025ca9faf20c8a2d073b2750abc036bea2818ddde16185f64662f261c39269d0",
+  "envelopeSig": "ec6a4e05d25d98a1db0855cd83e370327828c933ea8ac4f3c13b1055f0346496"
+}

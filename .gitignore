@@ -1,5 +1,2 @@
-# Build artifacts and dependencies
-vendor/dist/
-
-# Logs
+#Logs and temp files
 *.log
