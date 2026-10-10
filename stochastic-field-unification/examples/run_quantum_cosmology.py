@@ -18,77 +18,75 @@ Run this script after installing dependencies:
 import numpy as np
 from core.quantum_cosmology_suite import (
     PalatiniFormalism,
+    FormalismType,
     MetricTensor,
     AffineConnection,
     ElectromagneticField,
     schwarzschild_metric,
-    kerr_metric
+    kerr_metric,
+    uniform_em_field,
 )
 
 
 def demo_palatini_formalism():
     """Demonstrate the Palatini metric-affine variational formalism."""
-    
+
     print("=" * 70)
     print("PALATINI FORMALISM: Metric-Affine Variational Fields")
     print("=" * 70)
     print()
-    
-    # Create Palatini formalism engine
-    palatini = PalatiniFormalism()
-    
+
+    # Create Palatini formalism engine (vacuum sector)
+    palatini = PalatiniFormalism(formalism_type=FormalismType.VACUUM)
+
     print("Testing on Schwarzschild metric (vacuum solution)...")
     print("-" * 70)
-    
+
     # Schwarzschild parameters
     M = 1.0  # Mass parameter
     r_sch = 4.0  # Test radius (outside horizon at r=2M=2)
-    theta = np.pi / 2  # Equatorial plane
-    phi = 0.0
-    
+
     # Compute Schwarzschild metric at test point (standalone function)
     g_schwarzschild = schwarzschild_metric(r_sch, M)
-    coords = (0.0, r_sch, theta, phi)  # t coordinate arbitrary for static metric
-    
-    print(f"Coordinates: (t, r, θ, φ) = ({coords[0]}, {coords[1]}, {coords[2]:.4f}, {coords[3]})")
-    print(f"Metric determinant: {g_schwarzschild.det():.6e}")
+
+    print(f"Coordinates: (t, r, θ, φ) = (0.0, {r_sch}, {np.pi/2:.4f}, 0.0)")
+    print(f"Metric determinant: {g_schwarzschild.determinant:.6e}")
     print()
-    
-    # Compute Ricci tensor from independent connection
-    ricci = palatini.ricci_tensor_independent(g_schwarzschild)
-    print(f"Ricci tensor (from independent Γ):")
-    print(f"  Max component: {np.max(np.abs(ricci)):.6e}")
-    
-    # Verify vacuum Einstein equations
-    einstein_residual = palatini.einstein_equations_residual(g_schwarzschild)
-    print(f"Einstein equation residual: {np.max(np.abs(einstein_residual)):.6e}")
-    
-    is_vacuum_solution = np.allclose(einstein_residual, 0, atol=1e-10)
+
+    # Solve for the metric-compatible connection (Palatini variation of Γ)
+    conn_sw = palatini.solve_metric_compatibility(g_schwarzschild)
+    print(f"Connection symmetric: {conn_sw.is_symmetric}")
+    print(f"Has torsion: {conn_sw.has_torsion()}")
+
+    # Verify vacuum Einstein equations with the independent connection
+    einstein_sw = palatini.verify_einstein_equations(g_schwarzschild, conn_sw)
+    print(f"Einstein equation residual: {einstein_sw['max_residual']:.6e}")
+
+    is_vacuum_solution = einstein_sw['is_solution']
     print(f"Vacuum solution verified: {'✓ YES' if is_vacuum_solution else '✗ NO'}")
     print()
-    
+
     # Test Kerr rotating black hole
     print("Testing on Kerr rotating black hole metric...")
     print("-" * 70)
-    
+
     a = 0.5  # Spin parameter (a = J/M)
     r_kerr = 5.0
     theta_kerr = np.pi / 3
-    phi_kerr = 0.0
-    
-    g_kerr, coords_kerr = palatini.kerr_metric(M, a, r_kerr, theta_kerr, phi_kerr)
-    
-    print(f"Coordinates: (t, r, θ, φ) = ({coords_kerr[0]}, {coords_kerr[1]}, {coords_kerr[2]:.4f}, {coords_kerr[3]:.4f})")
+
+    g_kerr = kerr_metric(r_kerr, theta_kerr, M, a)
+    conn_kerr = palatini.solve_metric_compatibility(g_kerr)
+    einstein_kerr = palatini.verify_einstein_equations(g_kerr, conn_kerr)
+
+    print(f"Coordinates: (t, r, θ, φ) = (0.0, {r_kerr}, {theta_kerr:.4f}, 0.0)")
     print(f"Spin parameter: a = {a}")
-    print(f"Metric determinant: {g_kerr.det():.6e}")
-    
-    einstein_residual_kerr = palatini.einstein_equations_residual(g_kerr)
-    print(f"Einstein equation residual: {np.max(np.abs(einstein_residual_kerr)):.6e}")
-    
-    is_kerr_solution = np.allclose(einstein_residual_kerr, 0, atol=1e-9)
+    print(f"Metric determinant: {g_kerr.determinant:.6e}")
+    print(f"Einstein equation residual: {einstein_kerr['max_residual']:.6e}")
+
+    is_kerr_solution = einstein_kerr['is_solution']
     print(f"Kerr solution verified: {'✓ YES' if is_kerr_solution else '✗ NO'}")
     print()
-    
+
     return {
         'schwarzschild_verified': is_vacuum_solution,
         'kerr_verified': is_kerr_solution
@@ -113,52 +111,54 @@ def demo_einstein_cartan_torsion():
 
 def demo_em_coupling():
     """Demonstrate electromagnetic field coupling in curved spacetime."""
-    
+
     print("=" * 70)
     print("ELECTROMAGNETIC COUPLING: Maxwell Fields in Curved Spacetime")
     print("=" * 70)
     print()
-    
-    # Create EM field with background metric
-    M = 1.0
-    r_test = 6.0
-    palatini = PalatiniFormalism(dim=4)
-    g_background, _ = palatini.schwarzschild_metric(M, r_test, np.pi/2, 0.0)
-    
-    em = ElectromagneticField(g_background)
-    
-    # Define a simple electromagnetic field tensor F_μν
-    F = np.zeros((4, 4))
-    F[0, 1] = 0.1  # Radial electric field
-    F[1, 0] = -0.1
-    F[2, 3] = 0.05  # Magnetic field
-    F[3, 2] = -0.05
-    
+
+    # Uniform EM field on a flat (Minkowski) background
+    g_background = MetricTensor(components=np.diag([-1.0, 1.0, 1.0, 1.0]))
+
+    E_vec = np.array([0.1, 0.0, 0.0])   # Radial electric field
+    B_vec = np.array([0.0, 0.0, 0.05])  # Axial magnetic field
+    em = uniform_em_field(E_vec, B_vec)
+    F = em.components
+
     print("Electromagnetic field tensor F_μν:")
-    print(f"  Electric field (radial): E_r = 0.1")
-    print(f"  Magnetic field (axial):  B_z = 0.05")
+    print(f"  Electric field (radial): E_r = {E_vec[0]}")
+    print(f"  Magnetic field (axial):  B_z = {B_vec[2]}")
     print()
-    
-    # Compute electromagnetic invariants
-    invariant_F = em.electromagnetic_invariant(F)
-    invariant_G = em.pseudoscalar_invariant(F)
-    
-    print(f"EM invariants:")
+
+    # Invariants and stress-energy via the core module API
+    T_EM = em.compute_stress_energy(g_background)
+    g_inv = g_background.inverse
+    invariant_F = float(np.einsum('mn,mp,nq->', F, g_inv, F))  # F_μν F^μν
+
+    eps = np.zeros((4, 4, 4, 4))
+    from itertools import permutations
+    for perm in permutations(range(4)):
+        sig = 1
+        for i in range(4):
+            for j in range(i + 1, 4):
+                if perm[i] > perm[j]:
+                    sig = -sig
+        eps[perm] = sig
+    invariant_G = float(0.25 * np.einsum('mn,mnpq,pq->', F, eps, F))  # F ∧ F proxy
+
+    print("EM invariants:")
     print(f"  F_μν F^μν = {invariant_F:.6e}")
     print(f"  F_μν *F^μν = {invariant_G:.6e}")
     print()
-    
-    # Compute stress-energy tensor T_μν^EM
-    T_EM = em.stress_energy_tensor(F)
-    
-    print(f"Electromagnetic stress-energy tensor T_μν:")
-    print(f"  Energy density T_00 = {T_EM.g[0, 0]:.6e}")
+    print("Electromagnetic stress-energy tensor T_μν:")
+    print(f"  Energy density T_00 = {T_EM[0, 0]:.6e}")
+    print(f"  Trace T^μ_μ = {np.trace(T_EM):.6e}")
     print()
-    
+
     return {
         'invariant_F': invariant_F,
         'invariant_G': invariant_G,
-        'energy_density': T_EM.g[0, 0]
+        'energy_density': float(T_EM[0, 0])
     }
 
 
@@ -238,7 +238,7 @@ def main():
         ('Palatini (Schwarzschild)', results['palatini']['schwarzschild_verified']),
         ('Palatini (Kerr)', results['palatini']['kerr_verified']),
         ('Einstein-Cartan Torsion', results['einstein_cartan']['torsion_applied']),
-        ('EM Stress-Energy', results['em_coupling']['invariant_F'] is not None),
+        ('EM Stress-Energy', results['em_coupling']['energy_density'] is not None),
         ('FRG Flow Integration', results['frg']['lambda_ir'] is not None),
         ('Stochastic Quantization', results['stochastic_quant']['field_mean'] is not None),
         ('Hartle-Hawking Wavefunction', results['hartle_hawking']['most_probable_a'] is not None),

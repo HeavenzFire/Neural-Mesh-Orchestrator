@@ -1,4 +1,3 @@
-```
 # Environment variables
 .env
 .env.local
@@ -49,5 +48,4 @@ htmlcov/
 zig-cache/
 target/
 .gradle/
-```
-(empty)
+
