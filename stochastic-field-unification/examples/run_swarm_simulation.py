@@ -16,6 +16,13 @@ Run this script after installing dependencies:
     pip install -r requirements.txt
 """
 
+import sys
+from pathlib import Path
+
+# Ensure the package root (stochastic-field-unification/) is importable
+# regardless of the caller's working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import numpy as np
 from core.stochastic_cascade_engine import (
     UnifiedStochasticCascadeEngine,
