@@ -102,20 +102,38 @@ def demo_palatini_formalism():
 
 def demo_einstein_cartan_torsion():
     """Demonstrate Einstein-Cartan theory with spacetime torsion."""
-    
+
+    from itertools import permutations
+
+    from core.quantum_field_extensions import EinsteinCartanTheory
+
     print("=" * 70)
     print("EINSTEIN-CARTAN THEORY: Spacetime Torsion as Gauge Field")
     print("=" * 70)
     print()
-    print("Note: EinsteinCartanTheory class not yet implemented in this version.")
-    print("      This feature is planned for a future release.")
+
+    ec = EinsteinCartanTheory()
+    checks = ec.run_checks()
+    for name, ok in checks.items():
+        print(f"  {'OK' if ok else 'FAIL'} {name}")
+
+    # Totally antisymmetric test tensor supported on indices (0,1,2):
+    # all 6 permutations of (0,1,2) with Levi-Civita sign, |T|=1 entries.
+    torsion = np.zeros((4, 4, 4))
+    for perm in permutations(range(3)):
+        inv = sum(1 for i in range(3) for j in range(i + 1, 3)
+                  if perm[i] > perm[j])
+        torsion[perm] = 1.0 if inv % 2 == 0 else -1.0
+    axial = ec.axial_torsion_vector(torsion)
+    print(f"  Axial vector S_mu of the totally-antisymmetric test tensor:")
+    print(f"    S = {np.array2string(axial, precision=4)}   (expected S_3 = -1.5)")
+    coupling = ec.four_fermion_coupling()
+    print(f"  Four-fermion EC coupling lambda_EC ~ {coupling:.6e} m^2")
     print()
     return {
-        'torsion_applied': False,
-        'torsion_scalar': None
+        'torsion_applied': all(checks.values()),
+        'torsion_scalar': float(axial[3]),
     }
-
-
 def demo_em_coupling():
     """Demonstrate electromagnetic field coupling in curved spacetime."""
 
@@ -171,40 +189,73 @@ def demo_em_coupling():
 
 def demo_frg_flow():
     """Demonstrate Functional Renormalization Group flow equations."""
+    from core.quantum_field_extensions import FRGFlow
+
     print("=" * 70)
-    print("FUNCTIONAL RENORMALIZATION GROUP: Wetterich Equation")
+    print("FUNCTIONAL RENORMALIZATION GROUP: Wetterich Equation (LPA')")
     print("=" * 70)
     print()
-    print("Note: FRG module not yet implemented in this version.")
-    print("      This feature is planned for a future release.")
+
+    frg = FRGFlow(d=3.0)
+    checks = frg.run_checks()
+    for name, ok in checks.items():
+        print(f"  {'OK' if ok else 'FAIL'} {name}")
+
+    m2s, ls = frg.wilson_fisher_fixed_point()
+    beta = frg.beta_functions(m2s, ls)
+    print(f"  Wilson-Fisher FP (d=3): m2* = {m2s}, lambda* = {ls}")
+    print(f"  Direct beta residuals:  {beta[0]:.3e}, {beta[1]:.3e}")
+
+    traj = frg.integrate(m2_0=0.5, lam_0=0.3)
+    print(f"  IR endpoint from (0.5, 0.3): m2 -> {traj['m2'][-1]:.3e}, "
+          f"lambda -> {traj['lambda'][-1]:.3e}  (Gaussian decoupling)")
     print()
-    return {'lambda_ir': None}
-
-
+    return {'lambda_ir': float(traj['lambda'][-1]), 'checks': checks}
 def demo_stochastic_quantization():
     """Demonstrate Parisi-Wu stochastic quantization."""
+    from core.quantum_field_extensions import ParisiWuQuantizer
+
     print("=" * 70)
     print("PARISI-WU STOCHASTIC QUANTIZATION: Fifth-Time Relaxation")
     print("=" * 70)
     print()
-    print("Note: Stochastic quantization module not yet implemented.")
-    print("      This feature is planned for a future release.")
+
+    pw = ParisiWuQuantizer()
+    checks = pw.run_checks()
+    for name, ok in checks.items():
+        print(f"  {'OK' if ok else 'FAIL'} {name}")
+
+    stats = pw.equilibrate(tau_max=200.0)
+    print(f"  Mean sampled variance: {stats['mean_variance']:.4f} +/- "
+          f"{stats['stderr']:.4f}   (lattice analytic target "
+          f"{pw.analytic_variance():.4f})")
+    print(f"  Final field mean: {stats['final_field_mean']:.4e}")
     print()
-    return {'field_mean': None}
-
-
+    return {'field_mean': float(stats['final_field_mean']), 'checks': checks}
 def demo_hartle_hawking():
     """Demonstrate Hartle-Hawking no-boundary wavefunction."""
+    from core.quantum_field_extensions import HartleHawkingWavefunction
+
     print("=" * 70)
     print("HARTLE-HAWKING WAVEFUNCTION: No-Boundary Proposal")
     print("=" * 70)
     print()
-    print("Note: Hartle-Hawking wavefunction module not yet implemented.")
-    print("      This feature is planned for a future release.")
+    print("  Model assumptions (explicit, not universal claims): minisuperspace")
+    print("  closed FRW, G = 1 natural units, '+' branch Euclidean action,")
+    print("  probability measure P(a) = a^2 |Psi(a)|^2 on 0 <= a <= 1/sqrt(Lambda).")
     print()
-    return {'most_probable_a': None}
 
+    hh = HartleHawkingWavefunction()
+    checks = hh.run_checks()
+    for name, ok in checks.items():
+        print(f"  {'OK' if ok else 'FAIL'} {name}")
 
+    a_mp = hh.most_probable_a()
+    a_crit = 1.0 / np.sqrt(hh.cosmological_lambda)
+    print(f"  Most probable scale factor: a = {a_mp:.4f} "
+          f"(no-boundary region, 0 < a < a_crit = {a_crit:.4f})")
+    print()
+    return {'most_probable_a': a_mp, 'checks': checks}
 def main():
     """Execute comprehensive quantum cosmology demonstration."""
     
