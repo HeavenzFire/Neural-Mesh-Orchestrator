@@ -50,3 +50,22 @@ Generate matrix_modes synthetically (e.g., 151 smooth gyroid SDF samples), quant
 pack, brotli-compress, write the 151-byte-style file, decode it back, and report:
 file size, round-trip length check, and max SDF deviation vs the float64 originals.
 That produces an honest number for the "99%" label without relying on any absent artifact.
+
+## Addendum: self-contained v09-style experiment (run 2026-10-12, brotli installed)
+
+Reproduced the claimed format end-to-end with NO missing artifacts:
+151 gyroid-axis modes → min/max float32 + uint16 count header (`<ffH`) → 4-bit uniform
+quantization → nibble packing → brotli q11. Decoded with the PowerShell script's own
+decoder logic and compared against the float64 originals.
+
+Result file: `v09_style_experiment.hfq` = **86 bytes** (smaller than the claimed 151 B —
+size alone is not a scarce resource; accuracy is).
+- Length check: decoded n=151, samples=151 → OK
+- Max deviation: 0.0667 = **3.33% of full scale** (half-quantum step = 1/30 span, as theory predicts)
+- RMS deviation: 1.85% of span
+- Verdict on "99PCT": FAILS under the max-error criterion (96.7%); passes only under an
+  RMS criterion (98.2%) — still not 99%. The label is criterion-dependent and must state which.
+
+Conclusion: the 4-bit codec is *implementable and honest in size*, but the "99%" accuracy
+claim does not survive an explicit per-sample error bound at n=151. Any future filename
+should encode the measured criterion, e.g. `LOSSY_151_4BIT_MAXERR3.3PCT`.
