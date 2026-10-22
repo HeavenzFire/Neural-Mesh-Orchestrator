@@ -72,7 +72,7 @@ class HfqPortSecurityTests(unittest.TestCase):
         payload = gzip.compress(data)
         with tempfile.TemporaryDirectory() as temp:
             target = Path(temp) / "bad-digest.hfq"
-            target.write_bytes(make_archive(len(data), payload, digest=b"\\x00" * 32))
+            target.write_bytes(make_archive(len(data), payload, digest=b"\x00" * 32))
             with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
                 restore(target)
 
