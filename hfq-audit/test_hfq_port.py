@@ -88,6 +88,10 @@ class HfqPortSecurityTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), previous)
             self.assertEqual(list(Path(temp).glob(".hfq-*.tmp")), [])
 
+    def test_compress_rejects_unknown_codec_names(self):
+        with self.assertRaisesRegex(ValueError, "Unknown codec"):
+            compress(b"data", "Gzip")
+
 
 if __name__ == "__main__":
     unittest.main()
