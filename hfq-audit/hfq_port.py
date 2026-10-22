@@ -10,6 +10,7 @@ MAGIC = b'HFQCOMP01'
 HEADER_SIZE = 59  # 9+1+1+8+32+8
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_ORIGINAL_BYTES = 100 * 1024 * 1024
+MAX_SWEEP_BYTES = 1 * 1024 * 1024
 FIB = [1,2,3,5,8,13,21,34,55,89,144]
 
 def predictor(data: bytes, algo: str, inverse: bool) -> bytes:
@@ -99,8 +100,8 @@ def restore(path):
 
 def sweep(src_bytes, dest_path):
     data = src_bytes
-    if len(data) > MAX_ORIGINAL_BYTES:
-        raise ValueError('Input exceeds the permitted size.')
+    if len(data) > MAX_SWEEP_BYTES:
+        raise ValueError('Sweep input exceeds the 1 MiB CPU-safety limit.')
     digest = hashlib.sha256(data).digest()
     rows, best = [], None
     for a, algo in enumerate(ALGOS):
@@ -125,9 +126,9 @@ if __name__ == '__main__':
     import sys, json, os
     path = sys.argv[1]
     with open(path, 'rb') as handle:
-        data = handle.read(MAX_ORIGINAL_BYTES + 1)
-    if len(data) > MAX_ORIGINAL_BYTES:
-        raise ValueError('Input exceeds the permitted size.')
+        data = handle.read(MAX_SWEEP_BYTES + 1)
+    if len(data) > MAX_SWEEP_BYTES:
+        raise ValueError('Sweep input exceeds the 1 MiB CPU-safety limit.')
     rows, best = sweep(data, path + '.hfq')
     print(f'input={len(data)} best={best[4]}/{best[5]} archive={os.path.getsize(path+".hfq")}')
     for r in sorted(rows, key=lambda x:(x[3],))[:8]:
