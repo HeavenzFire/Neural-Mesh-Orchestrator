@@ -13,7 +13,7 @@ from hfq_port import (
 
 def make_archive(orig_len, payload, digest=None, aid=0, cid=0):
     if digest is None:
-        digest = b"\\x00" * 32
+        digest = b"\x00" * 32
     return (MAGIC + bytes([aid, cid]) + struct.pack("<q", orig_len) + digest
             + struct.pack("<q", len(payload)) + payload)
 
