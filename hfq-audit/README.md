@@ -15,7 +15,8 @@ This folder contains a bounded reader/writer for the experimental HFQ container 
 Run the unit tests:
 
 ```powershell
-python -m unittest -v hfq-audit/test_hfq_port.py
+Set-Location hfq-audit
+python -m unittest -v test_hfq_port.py
 ```
 
 Run a small codec sweep on an input file no larger than 1 MiB:
