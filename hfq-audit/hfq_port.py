@@ -38,6 +38,8 @@ def predictor(data: bytes, algo: str, inverse: bool) -> bytes:
 def compress(b: bytes, codec: str) -> bytes:
     if codec == 'GZip':
         return gzip.compress(b, mtime=0)
+    if codec != 'Deflate':
+        raise ValueError(f'Unknown codec: {codec}')
     co = zlib.compressobj(9, zlib.DEFLATED, -15)
     return co.compress(b) + co.flush()
 
