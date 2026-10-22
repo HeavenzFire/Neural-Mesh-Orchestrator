@@ -3,6 +3,7 @@ import hashlib
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from hfq_port import (
@@ -65,6 +66,27 @@ class HfqPortSecurityTests(unittest.TestCase):
         from hfq_port import MAX_SWEEP_BYTES
         with self.assertRaisesRegex(ValueError, "1 MiB CPU-safety limit"):
             sweep(b"x" * (MAX_SWEEP_BYTES + 1), "unused.hfq")
+
+    def test_restore_rejects_wrong_digest_even_with_optimization_enabled(self):
+        data = b"hello"
+        payload = gzip.compress(data)
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "bad-digest.hfq"
+            target.write_bytes(make_archive(len(data), payload, digest=b"\\x00" * 32))
+            with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+                restore(target)
+
+    def test_write_archive_preserves_existing_archive_if_atomic_replace_fails(self):
+        data = b"old valid archive"
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "existing.hfq"
+            write_archive(target, 0, 0, len(data), hashlib.sha256(data).digest(), compress(data, "GZip"))
+            previous = target.read_bytes()
+            with patch("hfq_port.os.replace", side_effect=OSError("simulated replace failure")):
+                with self.assertRaisesRegex(OSError, "simulated replace failure"):
+                    write_archive(target, 0, 0, len(data), hashlib.sha256(data).digest(), compress(b"new data", "GZip"))
+            self.assertEqual(target.read_bytes(), previous)
+            self.assertEqual(list(Path(temp).glob(".hfq-*.tmp")), [])
 
 
 if __name__ == "__main__":
