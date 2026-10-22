@@ -1,6 +1,5 @@
 import gzip
 import hashlib
-import os
 import struct
 import tempfile
 import unittest
@@ -14,7 +13,7 @@ from hfq_port import (
 
 def make_archive(orig_len, payload, digest=None, aid=0, cid=0):
     if digest is None:
-        digest = hashlib.sha256(b"A" * orig_len).digest()
+        digest = b"\\x00" * 32
     return (MAGIC + bytes([aid, cid]) + struct.pack("<q", orig_len) + digest
             + struct.pack("<q", len(payload)) + payload)
 
@@ -61,6 +60,11 @@ class HfqPortSecurityTests(unittest.TestCase):
             target.write_bytes(b"BADMAGIC!" + b"\x00" * (HEADER_SIZE - 9))
             with self.assertRaisesRegex(ValueError, "Invalid archive signature"):
                 restore(target)
+
+    def test_sweep_rejects_cpu_exhaustion_sized_input(self):
+        from hfq_port import MAX_SWEEP_BYTES
+        with self.assertRaisesRegex(ValueError, "1 MiB CPU-safety limit"):
+            sweep(b"x" * (MAX_SWEEP_BYTES + 1), "unused.hfq")
 
 
 if __name__ == "__main__":
