@@ -1,0 +1,30 @@
+name: HFQ archive safety tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'hfq-audit/**'
+      - '.github/workflows/hfq-archive-safety.yml'
+  pull_request:
+    paths:
+      - 'hfq-audit/**'
+      - '.github/workflows/hfq-archive-safety.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hfq-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Syntax check HFQ audit tool
+        run: python -m py_compile hfq-audit/hfq_port.py
+      - name: Test archive validation and decompression bounds
+        working-directory: hfq-audit
+        run: python -m unittest -v test_hfq_port.py
