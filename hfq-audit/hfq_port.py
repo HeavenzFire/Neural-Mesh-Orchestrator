@@ -1,7 +1,7 @@
 """Faithful Python port of the HeavenzFire HFQ sweep, for independent audit.
 Mirrors PowerShell semantics exactly: byte-wise XOR predictors with lag<=i guard,
 GZip/Deflate via gzip/zlib raw, header magic HFQCOMP01 + 59-byte header."""
-import gzip, zlib, hashlib, struct, math
+import gzip, zlib, hashlib, struct, math, os, tempfile
 
 ALGOS = ['Direct','XorLag1','XorLag2','XorLag3','XorLag5','XorLag8','XorLag13',
          'XorLag21','XorLag34','XorLag55','XorLag89','XorLag144','Phase369']
